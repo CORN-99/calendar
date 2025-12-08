@@ -1,13 +1,16 @@
+// src/db.ts
 import oracledb from "oracledb";
 import dotenv from "dotenv";
 
 dotenv.config();
 
-try {
-  oracledb.initOracleClient({ libDir: undefined });
-} catch (err) {
-  console.error("Oracle Client init error: ", err);
-  process.exit(1);
+// 오라클 초기화 (한 번만 실행되도록 전역 체크)
+if (!oracledb.initOracleClient) {
+  try {
+    oracledb.initOracleClient({ libDir: undefined });
+  } catch (err) {
+    console.error("Oracle Client init error: ", err);
+  }
 }
 
 const dbConfig = {
@@ -16,13 +19,34 @@ const dbConfig = {
   connectString: process.env.DB_CONNECT_STRING,
 };
 
-// 👇 여기 맨 앞에 'export'가 있는지 꼭 확인하세요!
 export async function getConnection() {
+  return await oracledb.getConnection(dbConfig);
+}
+
+// 헬퍼 함수: 연결 -> 실행 -> 결과반환 -> 연결해제
+export async function executeQuery(
+  sql: string,
+  binds: any[] = [],
+  options: oracledb.ExecuteOptions = {}
+) {
+  let connection;
   try {
-    const connection = await oracledb.getConnection(dbConfig);
-    return connection;
+    connection = await getConnection();
+    const result = await connection.execute(sql, binds, {
+      outFormat: oracledb.OUT_FORMAT_OBJECT, // 결과를 객체로 받기
+      ...options,
+    });
+    return result;
   } catch (err) {
-    console.error("DB 연결 실패:", err);
+    console.error("Query Error:", err);
     throw err;
+  } finally {
+    if (connection) {
+      try {
+        await connection.close();
+      } catch (e) {
+        console.error(e);
+      }
+    }
   }
 }
