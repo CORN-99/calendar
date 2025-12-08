@@ -1,11 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, Plus, Search, X, Edit2, Users, Calendar, Eye, EyeOff } from 'lucide-react';
 
-const CalendarUI = () => {
+const CalendarUI = ({ currentUser }) => {
+  const normalizedUser = currentUser
+    ? {
+        student_id: currentUser.STUDENT_ID || currentUser.student_id,
+        name: currentUser.NAME || currentUser.name,
+        dept_id: currentUser.DEPT_ID || currentUser.dept_id,
+      }
+    : null;
+  const userId = normalizedUser?.student_id;
   const [currentDate, setCurrentDate] = useState(new Date());
   const [view, setView] = useState('week');
   const [students, setStudents] = useState([]);
-  const [currentUser, setCurrentUser] = useState(null);
   const [visibleStudents, setVisibleStudents] = useState([]);
   const [schedules, setSchedules] = useState([]);
   const [sections, setSections] = useState([]);
@@ -13,6 +20,8 @@ const CalendarUI = () => {
   const [departmentEvents, setDepartmentEvents] = useState([]);
   const [studentGroups, setStudentGroups] = useState([]);
   const [friendships, setFriendships] = useState([]);
+  const [courses, setCourses] = useState([]);
+  const [groups, setGroups] = useState([]);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [editingSchedule, setEditingSchedule] = useState(null);
   const [newSchedule, setNewSchedule] = useState({
@@ -30,95 +39,169 @@ const CalendarUI = () => {
     friend5: '#fb923c',
   };
 
-  useEffect(() => {
-    loadAllData();
-  }, []);
 
   useEffect(() => {
-    if (visibleStudents.length > 0) {
-      loadSchedulesForUsers(visibleStudents);
-      loadSectionsForUsers(visibleStudents);
+    if (normalizedUser) {
+      setStudents([
+        {
+          student_id: normalizedUser.student_id,
+          name: normalizedUser.name,
+          dept_id: normalizedUser.dept_id,
+        },
+      ]);
+      setVisibleStudents([normalizedUser.student_id]);
+    } else {
+      setStudents([]);
+      setVisibleStudents([]);
     }
-  }, [visibleStudents]);
+  }, [userId]);
 
-  const loadAllData = async () => {
-    try {
-      const mockStudents = [
-        { student_id: '2021001234', name: '김민수', dept_id: 'COMP' },
-        { student_id: '2021005678', name: '이지나', dept_id: 'BUSI' },
-        { student_id: '2021009999', name: '박철수', dept_id: 'COMP' }
-      ];
-      
-      const mockFriendships = [
-        { me: '2021001234', friend: '2021005678' },
-        { me: '2021001234', friend: '2021009999' }
-      ];
-      
-      setStudents(mockStudents);
-      setFriendships(mockFriendships);
-      
-      if (mockStudents.length > 0) {
-        const user = mockStudents[0];
-        setCurrentUser(user);
-        setVisibleStudents([user.student_id]);
+  // 일정 불러오기
+  useEffect(() => {
+    if (!userId) return;
+
+    const fetchSchedules = async () => {
+      try {
+        const res = await fetch("/api/schedules", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ studentId: userId }),
+        });
+
+        if (!res.ok) throw new Error("일정 조회 실패");
+
+        const data = await res.json();
+        setSchedules(
+          (data.schedules || []).map((s) => ({
+            schedule_id: s.SCHEDULE_ID,
+            student_id: s.STUDENT_ID,
+            title: s.TITLE,
+            start_time: s.START_TIME,
+            end_time: s.END_TIME,
+          }))
+        );
+      } catch (e) {
+        console.error(e);
       }
-      
-      await loadAcademicEvents();
-      await loadDepartmentEvents();
-      await loadGroupsForUser(mockStudents[0].student_id);
-    } catch (error) {
-      console.error('Failed to load data:', error);
-    }
-  };
+    };
 
-  const loadSchedulesForUsers = async (studentIds) => {
-    try {
-      const mockSchedules = [
-        { schedule_id: 1, title: '프로젝트 회의', start_time: '2024-12-09T09:00:00', end_time: '2024-12-09T11:00:00', student_id: '2021001234' },
-        { schedule_id: 2, title: '팀 스터디', start_time: '2024-12-10T14:00:00', end_time: '2024-12-10T16:00:00', student_id: '2021001234' },
-        { schedule_id: 3, title: '동아리 모임', start_time: '2024-12-09T13:00:00', end_time: '2024-12-09T15:00:00', student_id: '2021005678' },
-        { schedule_id: 4, title: '발표 준비', start_time: '2024-12-11T10:00:00', end_time: '2024-12-11T12:00:00', student_id: '2021005678' },
-        { schedule_id: 5, title: '개인 학습', start_time: '2024-12-10T09:00:00', end_time: '2024-12-10T11:00:00', student_id: '2021009999' }
-      ];
-      
-      const filtered = mockSchedules.filter(s => studentIds.includes(s.student_id));
-      setSchedules(filtered);
-    } catch (error) {
-      console.error('Failed to load schedules:', error);
-    }
-  };
+    fetchSchedules();
+  }, [userId]);
 
-  const loadSectionsForUsers = async (studentIds) => {
-    try {
-      const mockSections = [
-        { section_id: 'COMP0320-01', course_id: 'COMP0320', title: '데이터베이스', academic_term: 202502, time: '월 09:00-12:00, 수 09:00-12:00', location: '공학관 301', student_id: '2021001234' },
-        { section_id: 'COMP0415-01', course_id: 'COMP0415', title: '컴퓨터구조', academic_term: 202502, time: '화 14:00-16:00', location: '공학관 401', student_id: '2021001234' },
-        { section_id: 'BUSI0201-01', course_id: 'BUSI0201', title: '마케팅원론', academic_term: 202502, time: '월 13:00-15:00', location: '경영관 201', student_id: '2021005678' },
-        { section_id: 'COMP0320-02', course_id: 'COMP0320', title: '데이터베이스', academic_term: 202502, time: '월 09:00-12:00, 수 09:00-12:00', location: '공학관 301', student_id: '2021009999' }
-      ];
-      
-      const filtered = mockSections.filter(s => studentIds.includes(s.student_id));
-      setSections(filtered);
-    } catch (error) {
-      console.error('Failed to load sections:', error);
-    }
-  };
+  // 수업(과목) 불러오기
+  useEffect(() => {
+    if (!userId) return;
 
-  const loadAcademicEvents = async () => {
-    setAcademicEvents([{ academic_event_id: 1, title: '중간고사', start_date: '2024-12-09', end_date: '2024-12-13' }]);
-  };
+    const fetchCourses = async () => {
+      try {
+        const res = await fetch("/api/courses", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ studentId: userId }),
+        });
 
-  const loadDepartmentEvents = async () => {
-    setDepartmentEvents([{ dept_event_id: 1, department_id: 'COMP', title: '학과 세미나', start_date: '2024-12-12', end_date: '2024-12-12', locations: ['대강당'] }]);
-  };
+        if (!res.ok) throw new Error("수업 조회 실패");
 
-  const loadGroupsForUser = async () => {
-    setStudentGroups([{ group_id: 1, g_name: '캡스톤디자인 팀', purpose: '졸업 프로젝트', leader: '2021001234', member_count: 4 }]);
-  };
+        const data = await res.json();
+        setCourses(
+          (data.courses || []).map((c) => ({
+            student_id: c.STUDENT_ID,
+            course_id: c.COURSE_ID,
+            section_id: c.SECTION_ID,
+          }))
+        );
+      } catch (e) {
+        console.error(e);
+      }
+    };
+
+    fetchCourses();
+  }, [userId]);
+
+  // 그룹/친구 불러오기
+  useEffect(() => {
+    if (!userId) return;
+
+    const fetchGroups = async () => {
+      try {
+        const res = await fetch("/api/groups", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ studentId: userId }),
+        });
+
+        if (!res.ok) throw new Error("그룹 조회 실패");
+
+        const data = await res.json();
+
+        // rows: [{ GROUP_ID, GROUP_NAME, CATEGORY, LEADER_ID, STUDENT_ID, NAME, (optional) DEPT_ID }, ...]
+        const grouped = {};
+        const friendMap = new Map();
+
+        (data.rows || []).forEach((row) => {
+          const gid = row.GROUP_ID;
+          if (!grouped[gid]) {
+            grouped[gid] = {
+              groupId: row.GROUP_ID,
+              name: row.GROUP_NAME,
+              category: row.CATEGORY,
+              leaderId: row.LEADER_ID,
+              members: [],
+            };
+          }
+          grouped[gid].members.push({
+            student_id: row.STUDENT_ID,
+            name: row.NAME,
+            dept_id: row.DEPT_ID || "",
+          });
+
+          if (row.STUDENT_ID !== normalizedUser.student_id) {
+            if (!friendMap.has(row.STUDENT_ID)) {
+              friendMap.set(row.STUDENT_ID, {
+                student_id: row.STUDENT_ID,
+                name: row.NAME,
+                dept_id: row.DEPT_ID || "",
+              });
+            }
+          }
+        });
+
+        const friendList = Array.from(friendMap.values());
+
+        setGroups(Object.values(grouped));
+
+        // students 목록에 친구들 추가
+        setStudents((prev) => {
+          const existingIds = new Set(prev.map((s) => s.student_id));
+          const merged = [...prev];
+          friendList.forEach((f) => {
+            if (!existingIds.has(f.student_id)) {
+              merged.push(f);
+            }
+          });
+          return merged;
+        });
+
+        // friendships 배열 채우기 (me -> friend)
+        setFriendships(
+          friendList.map((f) => ({
+            me: normalizedUser.student_id,
+            friend: f.student_id,
+          }))
+        );
+      } catch (e) {
+        console.error(e);
+      }
+    };
+
+    fetchGroups();
+  }, [userId]);
 
   const getFriends = () => {
-    if (!currentUser) return [];
-    const friendIds = friendships.filter(f => f.me === currentUser.student_id).map(f => f.friend);
+    if (!normalizedUser) return [];
+    const friendIds = friendships
+      .filter(f => f.me === normalizedUser.student_id)
+      .map(f => f.friend);
     return students.filter(s => friendIds.includes(s.student_id));
   };
 
@@ -133,7 +216,7 @@ const CalendarUI = () => {
   };
 
   const getUserColor = (studentId) => {
-    if (studentId === currentUser?.student_id) return userColors.primary;
+    if (studentId === normalizedUser?.student_id) return userColors.primary;
     const visibleIndex = visibleStudents.indexOf(studentId);
     const colorKeys = Object.keys(userColors).filter(k => k.startsWith('friend'));
     return userColors[colorKeys[visibleIndex % colorKeys.length]] || userColors.friend1;
@@ -149,7 +232,7 @@ const CalendarUI = () => {
       title: newSchedule.title,
       start_time: newSchedule.start_time,
       end_time: newSchedule.end_time,
-      student_id: currentUser.student_id
+      student_id: normalizedUser.student_id
     };
     setSchedules([...schedules, scheduleData]);
     setShowScheduleModal(false);
@@ -238,19 +321,50 @@ const CalendarUI = () => {
       <div className="w-72 bg-gray-950 p-4 flex flex-col overflow-auto">
         <div className="mb-4">
           <h2 className="text-xs font-semibold mb-2 text-gray-400 uppercase">내 정보</h2>
-          {currentUser && (
-            <div className={`bg-gray-800 rounded-lg p-3 cursor-pointer border-2 ${visibleStudents.includes(currentUser.student_id) ? 'border-blue-500' : 'border-transparent'}`} onClick={() => toggleUserVisibility(currentUser.student_id)}>
+          {normalizedUser && (
+            <div
+              className={`bg-gray-800 rounded-lg p-3 cursor-pointer border-2 ${
+                visibleStudents.includes(normalizedUser.student_id)
+                  ? 'border-blue-500'
+                  : 'border-transparent'
+              }`}
+              onClick={() => toggleUserVisibility(normalizedUser.student_id)}
+            >
               <div className="flex items-center justify-between">
                 <div>
                   <div className="font-semibold flex items-center gap-2">
-                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: getUserColor(currentUser.student_id) }}></div>
-                    {currentUser.name}
+                    <div
+                      className="w-3 h-3 rounded-full"
+                      style={{ backgroundColor: getUserColor(normalizedUser.student_id) }}
+                    ></div>
+                    {normalizedUser.name}
                   </div>
-                  <div className="text-sm text-gray-400">학번: {currentUser.student_id}</div>
+                  <div className="text-sm text-gray-400">학번: {normalizedUser.student_id}</div>
                 </div>
-                {visibleStudents.includes(currentUser.student_id) ? <Eye size={16} className="text-blue-400" /> : <EyeOff size={16} className="text-gray-500" />}
+                {visibleStudents.includes(normalizedUser.student_id) ? (
+                  <Eye size={16} className="text-blue-400" />
+                ) : (
+                  <EyeOff size={16} className="text-gray-500" />
+                )}
               </div>
             </div>
+          )}
+        </div>
+
+        <div className="mb-4 mt-2">
+          <h2 className="text-xs font-semibold mb-2 text-gray-400 uppercase flex items-center gap-1">
+            <Calendar size={14} />매주 듣는 수업
+          </h2>
+          {courses.length === 0 ? (
+            <div className="text-xs text-gray-400">수강 중인 과목 정보 없음</div>
+          ) : (
+            <ul className="text-xs text-gray-200 space-y-1">
+              {courses.map((c, idx) => (
+                <li key={idx}>
+                  {c.course_id} - 분반 {c.section_id}
+                </li>
+              ))}
+            </ul>
           )}
         </div>
 
@@ -275,25 +389,67 @@ const CalendarUI = () => {
         </div>
 
         <div className="mb-4">
+          <h2 className="text-xs font-semibold mb-2 text-gray-400 uppercase flex items-center gap-1">
+            내 그룹 / 친구
+          </h2>
+          {groups.length === 0 ? (
+            <div className="text-xs text-gray-400">가입된 그룹 없음</div>
+          ) : (
+            <div className="space-y-2 text-xs text-gray-200">
+              {groups.map((g) => (
+                <div
+                  key={g.groupId}
+                  className="border border-gray-700 rounded p-2"
+                >
+                  <div className="font-semibold">
+                    {g.name}
+                    {g.leaderId === normalizedUser?.student_id && (
+                      <span className="ml-1 text-[10px] text-yellow-300">
+                        (리더)
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-[11px] text-gray-400 mb-1">
+                    분류: {g.category}
+                  </div>
+                  <div className="text-[11px] text-gray-300">
+                    멤버:{" "}
+                    {g.members
+                      .map((m) =>
+                        m.student_id === normalizedUser?.student_id
+                          ? `${m.name}(나)`
+                          : m.name
+                      )
+                      .join(", ")}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="mb-4">
           <div className="flex items-center justify-between mb-2">
             <h2 className="text-xs font-semibold text-gray-400 uppercase flex items-center gap-1"><Calendar size={14} />개인 일정</h2>
             <button onClick={() => { setEditingSchedule(null); setNewSchedule({ title: '', start_time: '', end_time: '' }); setShowScheduleModal(true); }} className="text-blue-400 hover:text-blue-300"><Plus size={14} /></button>
           </div>
           <div className="space-y-2">
-            {schedules.filter(s => s.student_id === currentUser?.student_id).map(schedule => (
-              <div key={schedule.schedule_id} className="bg-gray-800 rounded-lg p-2 text-sm group">
-                <div className="flex justify-between items-start">
-                  <div className="flex-1">
-                    <div className="font-semibold">{schedule.title}</div>
-                    <div className="text-xs text-gray-400">{new Date(schedule.start_time).toLocaleString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
-                  </div>
-                  <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button onClick={() => openEditModal(schedule)} className="text-gray-400 hover:text-blue-400"><Edit2 size={12} /></button>
-                    <button onClick={() => handleDeleteSchedule(schedule.schedule_id)} className="text-gray-400 hover:text-red-400"><X size={12} /></button>
+            {schedules
+              .filter(s => s.student_id === normalizedUser?.student_id)
+              .map(schedule => (
+                <div key={schedule.schedule_id} className="bg-gray-800 rounded-lg p-2 text-sm group">
+                  <div className="flex justify-between items-start">
+                    <div className="flex-1">
+                      <div className="font-semibold">{schedule.title}</div>
+                      <div className="text-xs text-gray-400">{new Date(schedule.start_time).toLocaleString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
+                    </div>
+                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button onClick={() => openEditModal(schedule)} className="text-gray-400 hover:text-blue-400"><Edit2 size={12} /></button>
+                      <button onClick={() => handleDeleteSchedule(schedule.schedule_id)} className="text-gray-400 hover:text-red-400"><X size={12} /></button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              ))}
           </div>
         </div>
 
