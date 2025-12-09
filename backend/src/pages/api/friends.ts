@@ -17,20 +17,20 @@ export default async function handler(
 
       // 내가 student_id1인 경우 (상대방은 student_id2)
       // 또는 내가 student_id2인 경우 (상대방은 student_id1)
-      // 두 경우를 UNION 하여 상대방 정보를 가져옴.
+      // 두 경우를 UNION 하여 상대방 정보를 가져옵니다.
       const sql = `
-        SELECT s.student_id, s.name, s.dept_id
+        SELECT s.student_id as "student_id", s.name as "name", s.dept_id as "dept_id"
         FROM student s
         JOIN friendship f ON s.student_id = f.student_id2
-        WHERE f.student_id1 = :id
+        WHERE f.student_id1 = :1
         UNION
-        SELECT s.student_id, s.name, s.dept_id
+        SELECT s.student_id as "student_id", s.name as "name", s.dept_id as "dept_id"
         FROM student s
         JOIN friendship f ON s.student_id = f.student_id1
-        WHERE f.student_id2 = :id
+        WHERE f.student_id2 = :1
       `;
 
-      const result = await executeQuery(sql, [studentId]);
+      const result = await executeQuery(sql, [studentId, studentId]);
       return res.status(200).json({ friends: result.rows });
     }
 
@@ -58,8 +58,7 @@ export default async function handler(
       }
 
       const insertSql = `INSERT INTO friendship (student_id1, student_id2) VALUES (:1, :2)`;
-      await executeQuery(insertSql, [id1, id2]);
-      await executeQuery("COMMIT");
+      await executeQuery(insertSql, [id1, id2], { autoCommit: true });
 
       return res.status(200).json({ message: "Friend added successfully" });
     }
@@ -79,8 +78,7 @@ export default async function handler(
       const [id1, id2] = [sMyId, sFriendId].sort();
 
       const deleteSql = `DELETE FROM friendship WHERE student_id1 = :1 AND student_id2 = :2`;
-      await executeQuery(deleteSql, [id1, id2]);
-      await executeQuery("COMMIT");
+      await executeQuery(deleteSql, [id1, id2], { autoCommit: true });
 
       return res.status(200).json({ message: "Friend deleted successfully" });
     }
