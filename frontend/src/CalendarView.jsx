@@ -783,121 +783,102 @@ const parseTimeFromSection = (timeStr) => {
   const friends = getFriends();
   const getStudentName = (studentId) => students.find(s => s.student_id === studentId)?.name || '';
 
-  const isCourseContinuation = (items, idx) => {
-    const item = items[idx];
-    if (!item || item.type !== 'course') return false;
+  // --- 레이아웃 알고리즘 시작 ---
 
-    const curKey = (item.data && item.data.course_id) || item.title;
-    const curDateStr = item.date.toDateString();
+  // 두 아이템이 겹치는지 확인 (시간 기준)
+  const checkOverlap = (a, b) => {
+    return a.startTime < b.endTime && a.endTime > b.startTime;
+  };
 
-    for (let j = idx - 1; j >= 0; j -= 1) {
-      const prev = items[j];
-      if (!prev || prev.type !== 'course') continue;
-      if (prev.date.toDateString() !== curDateStr) continue;
+  // 특정 요일의 아이템들에 대해 위치(left, width)를 계산하는 함수
+  const calculateDailyLayout = (dayItems) => {
+    if (!dayItems || dayItems.length === 0) return [];
 
-      const prevKey = (prev.data && prev.data.course_id) || prev.title;
-      if (prevKey !== curKey) continue;
-
-      if (prev.endTime.getTime() === item.startTime.getTime()) {
-        return true;
+    // 1. 시작 시간 순으로 정렬 (같으면 긴 일정 우선, 그다음 ID순)
+    const sortedItems = [...dayItems].sort((a, b) => {
+      if (a.startTime.getTime() !== b.startTime.getTime()) {
+        return a.startTime - b.startTime;
       }
+      if (a.endTime.getTime() !== b.endTime.getTime()) {
+        return b.endTime - a.endTime; // 긴 것 우선
+      }
+      return a.id.localeCompare(b.id);
+    });
 
-      // 이전 시간이 현재 시작보다 앞이면 더 이상 볼 필요 없음
-      if (prev.startTime.getTime() < item.startTime.getTime()) {
-        break;
+    // 2. 클러스터링 (서로 겹치는 일정끼리 그룹화)
+    const clusters = [];
+    for (const item of sortedItems) {
+      let added = false;
+      for (const cluster of clusters) {
+        // 클러스터 내의 어떤 아이템이라도 현재 아이템과 겹치면 같은 클러스터
+        if (cluster.some(other => checkOverlap(item, other))) {
+          cluster.push(item);
+          added = true;
+          break;
+        }
+      }
+      if (!added) {
+        clusters.push([item]);
       }
     }
 
-    return false;
-  };
+    // 3. 각 클러스터별로 컬럼 할당 및 위치 계산
+    const layoutResults = [];
 
-  // 두 이벤트가 시간적으로 겹치는지 확인하는 함수
-  const isTimeOverlapping = (item1, item2) => {
-    const start1 = item1.startTime.getTime();
-    const end1 = item1.endTime.getTime();
-    const start2 = item2.startTime.getTime();
-    const end2 = item2.endTime.getTime();
-    
-    // 시간이 겹치는지 확인: 시작 시간이 다른 이벤트의 종료 시간보다 작고,
-    // 종료 시간이 다른 이벤트의 시작 시간보다 커야 함
-    // 단, 경계에서 만나는 경우(end1 === start2 또는 start1 === end2)는 겹치지 않는 것으로 간주
-    return start1 < end2 && end1 > start2;
-  };
-  
-  // 같은 날짜의 모든 이벤트를 겹치는 그룹으로 묶는 함수 (Union-Find 방식)
-  const getOverlappingGroupsForDay = (dayItems) => {
-    if (dayItems.length === 0) return [];
-    
-    const groups = [];
-    const itemToGroup = new Map();
-    
-    dayItems.forEach(item => {
-      // 현재 아이템과 겹치는 그룹 찾기
-      const overlappingGroupIndices = [];
-      
-      groups.forEach((group, groupIdx) => {
-        const hasOverlap = group.some(other => isTimeOverlapping(item, other));
-        if (hasOverlap) {
-          overlappingGroupIndices.push(groupIdx);
+    clusters.forEach(cluster => {
+      // 클러스터 내에서 다시 정렬 (이미 되어있지만 확실히)
+      cluster.sort((a, b) => a.startTime - b.startTime);
+
+      // 컬럼 할당: 각 아이템에 대해 충돌하지 않는 가장 낮은 인덱스 부여
+      const columns = []; // [ [item, item], [item], ... ] 각 컬럼에 들어간 아이템들
+      const itemColumnIndex = new Map(); // itemId -> columnIndex
+
+      cluster.forEach(item => {
+        let placed = false;
+        // 기존 컬럼들 순회하며 빈 곳 찾기
+        for (let i = 0; i < columns.length; i++) {
+          const colItems = columns[i];
+          // 해당 컬럼의 마지막 아이템과 겹치지 않으면 배치 가능
+          // (정렬되어 있으므로 마지막 아이템만 체크하면 됨... 이 아니라,
+          //  중간에 빈 공간이 있을 수 있으니 해당 컬럼의 모든 아이템과 체크해야 안전)
+          const hasOverlap = colItems.some(existing => checkOverlap(item, existing));
+          
+          if (!hasOverlap) {
+            colItems.push(item);
+            itemColumnIndex.set(item.id, i);
+            placed = true;
+            break;
+          }
+        }
+
+        if (!placed) {
+          // 새 컬럼 생성
+          columns.push([item]);
+          itemColumnIndex.set(item.id, columns.length - 1);
         }
       });
+
+      const totalColumns = columns.length;
       
-      if (overlappingGroupIndices.length === 0) {
-        // 새로운 그룹 생성
-        const newGroup = [item];
-        groups.push(newGroup);
-        itemToGroup.set(item.id, groups.length - 1);
-      } else {
-        // 첫 번째 겹치는 그룹에 추가
-        const targetGroupIdx = overlappingGroupIndices[0];
-        groups[targetGroupIdx].push(item);
-        itemToGroup.set(item.id, targetGroupIdx);
-        
-        // 나머지 겹치는 그룹들을 첫 번째 그룹에 병합 (전이적 클로저)
-        for (let i = overlappingGroupIndices.length - 1; i > 0; i--) {
-          const mergeIdx = overlappingGroupIndices[i];
-          const mergeGroup = groups[mergeIdx];
-          
-          mergeGroup.forEach(otherItem => {
-            if (!groups[targetGroupIdx].some(existing => existing.id === otherItem.id)) {
-              groups[targetGroupIdx].push(otherItem);
-            }
-            itemToGroup.set(otherItem.id, targetGroupIdx);
-          });
-          
-          groups.splice(mergeIdx, 1);
-          
-          // 인덱스 재조정
-          itemToGroup.forEach((groupIdx, itemId) => {
-            if (groupIdx > mergeIdx) {
-              itemToGroup.set(itemId, groupIdx - 1);
-            }
-          });
-        }
-      }
+      cluster.forEach(item => {
+        const colIdx = itemColumnIndex.get(item.id);
+        const width = 100 / totalColumns;
+        const left = colIdx * width;
+
+        layoutResults.push({
+          item,
+          style: {
+            left: `${left}%`,
+            width: `${width}%`, // -1px for border gap?
+          }
+        });
+      });
     });
-    
-    return groups;
+
+    return layoutResults;
   };
-  
-  // 특정 아이템이 속한 겹치는 그룹 찾기
-  const getOverlappingGroupForItem = (items, currentItem) => {
-    const targetDateStr = currentItem.date.toDateString();
-    const dayItems = items.filter(item => item.date.toDateString() === targetDateStr);
-    
-    if (dayItems.length === 0) return [currentItem];
-    
-    const groups = getOverlappingGroupsForDay(dayItems);
-    
-    // 현재 아이템이 속한 그룹 찾기
-    for (const group of groups) {
-      if (group.some(item => item.id === currentItem.id)) {
-        return group;
-      }
-    }
-    
-    return [currentItem]; // 겹치는 그룹이 없으면 자기 자신만
-  };
+
+  // --- 레이아웃 알고리즘 끝 ---
 
   return (
     <div className="flex h-screen bg-gray-900 text-white">
@@ -1148,107 +1129,66 @@ const parseTimeFromSection = (timeStr) => {
               </div>
             ))}
 
-            {visibleItems.map((item, idx) => {
-              const matchingDay = weekDays.findIndex(
-                (d) => d.fullDate.toDateString() === item.date.toDateString()
+            {visibleItems.length > 0 && weekDays.map((day) => {
+              const dayItems = visibleItems.filter(
+                (item) => item.date.toDateString() === day.fullDate.toDateString()
               );
-              if (matchingDay === -1) return null;
-
-              const startHour = item.startTime.getHours();
-              const startMin = item.startTime.getMinutes();
-              const endHour = item.endTime.getHours();
-              const endMin = item.endTime.getMinutes();
-              const topPosition = (startHour - 7) * 60 + startMin;
-              const duration =
-                (endHour - startHour) * 60 + (endMin - startMin);
-
-              const dayBaseLeft = (matchingDay / 7) * 87.5 + 12.5; // 요일별 시작 위치
-              const dayColumnWidth = 12; // 각 요일 칼럼의 전체 폭 (% 기준)
-
-              // 현재 이벤트의 시간대에서 실제로 겹치는 이벤트만 찾기
-              const targetDateStr = item.date.toDateString();
-              const itemStart = item.startTime.getTime();
-              const itemEnd = item.endTime.getTime();
               
-              // 같은 날짜의 이벤트 중에서 현재 이벤트와 시간이 겹치는 것만 찾기
-              const overlappingItems = visibleItems.filter(other => {
-                if (other.id === item.id) return false;
-                if (other.date.toDateString() !== targetDateStr) return false;
-                
-                const otherStart = other.startTime.getTime();
-                const otherEnd = other.endTime.getTime();
-                
-                // 현재 이벤트의 시간대와 겹치는지 확인
-                return otherStart < itemEnd && otherEnd > itemStart;
-              });
-              
-              // 겹치는 이벤트가 없으면 전체 너비 사용
-              let leftPercent, widthPercent;
-              
-              if (overlappingItems.length === 0) {
-                // 겹치지 않으면 전체 너비 사용
-                leftPercent = dayBaseLeft;
-                widthPercent = dayColumnWidth - 0.5;
-              } else {
-                // 겹치는 경우: 현재 이벤트를 포함한 그룹 내에서만 분할
-                const allOverlapping = [item, ...overlappingItems];
-                const overlappingCount = allOverlapping.length;
-                const slotWidth = dayColumnWidth / overlappingCount;
-                
-                // 현재 아이템이 겹치는 그룹 내에서 몇 번째인지 찾기
-                // 같은 시간대에 시작하는 순서대로 정렬, 그 다음 학생 순서
-                const sortedOverlapping = [...allOverlapping].sort((a, b) => {
-                  const timeDiff = a.startTime.getTime() - b.startTime.getTime();
-                  if (timeDiff !== 0) return timeDiff;
-                  // 같은 시간이면 visibleStudents 순서대로
-                  const aIdx = visibleStudents.indexOf(a.studentId);
-                  const bIdx = visibleStudents.indexOf(b.studentId);
-                  return aIdx - bIdx;
-                });
-                
-                // 현재 아이템의 위치 찾기 (id로 정확히 매칭)
-                const positionInGroup = sortedOverlapping.findIndex(overlap => 
-                  overlap.id === item.id
-                );
-                
-                if (positionInGroup === -1) {
-                  // 찾지 못한 경우 (이상하지만 안전장치)
-                  leftPercent = dayBaseLeft;
-                  widthPercent = dayColumnWidth - 0.5;
-                } else {
-                  leftPercent = dayBaseLeft + slotWidth * positionInGroup;
-                  widthPercent = slotWidth - 0.5; // 칼럼 사이 약간의 간격
-                }
-              }
+              const layoutItems = calculateDailyLayout(dayItems);
 
-              const continuation = isCourseContinuation(visibleItems, idx);
+              return layoutItems.map(({ item, style }) => {
+                const startHour = item.startTime.getHours();
+                const startMin = item.startTime.getMinutes();
+                const endHour = item.endTime.getHours();
+                const endMin = item.endTime.getMinutes();
+                
+                // 7시부터 시작하므로 (startHour - 7)
+                const topPosition = (startHour - 7) * 60 + startMin;
+                const duration = (endHour - startHour) * 60 + (endMin - startMin);
 
-              return (
-                <div
-                  key={item.id}
-                  className="absolute rounded px-2 py-1 text-xs cursor-pointer hover:opacity-90 transition-opacity"
-                  style={{
-                    backgroundColor: item.color,
-                    top: `${topPosition}px`,
-                    left: `${leftPercent}%`,
-                    width: `${widthPercent}%`,
-                    height: `${duration}px`,
-                    minHeight: '30px',
-                    color: '#000',
-                    overflow: 'hidden',
-                    wordBreak: 'break-word',
-                  }}
-                >
-                  {!continuation && (
-                    <div className="font-semibold" style={{ 
+                // 요일별 기본 위치 (12.5% 씩)
+                // day.day는 날짜 숫자이므로, weekDays 배열의 인덱스를 찾아야 함
+                const dayIndex = weekDays.findIndex(d => d.date === day.date);
+                const dayBaseLeft = dayIndex * 12.5 + 12.5; // 첫 컬럼(시간) 12.5% 제외
+                
+                // style.left는 0~100% (해당 요일 컬럼 내에서의 위치)
+                // 실제 left = dayBaseLeft + (style.left * 0.125)
+                const finalLeft = `calc(${dayBaseLeft}% + ${parseFloat(style.left) * 0.125}%)`;
+                const finalWidth = `${parseFloat(style.width) * 0.125}%`;
+
+                return (
+                  <div
+                    key={item.id}
+                    className="absolute rounded px-2 py-1 text-xs cursor-pointer hover:opacity-90 transition-opacity hover:z-50 group"
+                    style={{
+                      backgroundColor: item.color,
+                      top: `${topPosition}px`,
+                      left: finalLeft,
+                      width: finalWidth,
+                      height: `${duration}px`,
+                      minHeight: '30px',
+                      color: '#000',
                       overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                      width: '100%'
-                    }}>{item.title}</div>
-                  )}
-                </div>
-              );
+                      boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
+                      border: '1px solid rgba(255,255,255,0.2)'
+                    }}
+                    title={`${item.title}\n${item.startTime.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - ${item.endTime.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`}
+                  >
+                    <div className="font-semibold truncate">
+                      {item.title}
+                    </div>
+                    {/* Hover 시 전체 내용 보여주기 (옵션) */}
+                    <div className="hidden group-hover:block absolute left-0 top-full bg-gray-900 text-white text-xs p-2 rounded shadow-lg z-50 w-48 whitespace-normal">
+                      <div className="font-bold mb-1">{item.title}</div>
+                      <div>
+                        {item.startTime.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - 
+                        {item.endTime.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                      </div>
+                      {item.data && item.data.location && <div>{item.data.location}</div>}
+                    </div>
+                  </div>
+                );
+              });
             })}
           </div>
         </div>
