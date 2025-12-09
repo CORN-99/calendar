@@ -1,0 +1,21 @@
+/* Tailwind 기반 전역 스타일 */
+
+/* 1) Tailwind 지시문 */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 2) 전체 높이 & 기본 폰트 설정 */
+html,
+body,
+#app {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  background-color: #020617; /* 진한 네이비 배경 (bg-slate-950 느낌) */
+  color: #e5e7eb; /* text-gray-200 정도 */
+}
