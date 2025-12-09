@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { ChevronLeft, ChevronRight, Plus, Search, X, Edit2, Users, Calendar, Eye, EyeOff } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Search, X, Edit2, Users, Calendar, Eye, EyeOff, Trash2 } from 'lucide-react';
 
 const CalendarUI = ({ currentUser }) => {
   const normalizedUser = currentUser
@@ -29,6 +29,19 @@ const CalendarUI = ({ currentUser }) => {
     start_time: '',
     end_time: ''
   });
+  const [showCourseModal, setShowCourseModal] = useState(false);
+  const [newCourse, setNewCourse] = useState({
+    course_id: '',
+    title: '',
+    credits: '',
+    section_id: '',
+    academic_term: '202502',
+    time: '',
+    location: ''
+  });
+  const [sectionSearchTerm, setSectionSearchTerm] = useState('');
+  const [sectionSearchResults, setSectionSearchResults] = useState([]);
+  const [isSearching, setIsSearching] = useState(false);
   const [loadedStudents, setLoadedStudents] = useState([]);
 
   const userColors = {
@@ -314,39 +327,257 @@ const CalendarUI = ({ currentUser }) => {
     return '#6b7280';
   };
 
-  const handleAddSchedule = () => {
+  const handleAddSchedule = async () => {
     if (!newSchedule.title || !newSchedule.start_time || !newSchedule.end_time) {
       alert('모든 필드를 입력해주세요.');
       return;
     }
-    const scheduleData = {
-      schedule_id: schedules.length + 1,
-      title: newSchedule.title,
-      start_time: newSchedule.start_time,
-      end_time: newSchedule.end_time,
-      student_id: normalizedUser.student_id
-    };
-    setSchedules([...schedules, scheduleData]);
-    setShowScheduleModal(false);
-    setNewSchedule({ title: '', start_time: '', end_time: '' });
+
+    try {
+      // 날짜 형식 변환 (datetime-local -> 'YYYY-MM-DD HH24:MI')
+      const startTime = newSchedule.start_time.replace('T', ' ').substring(0, 16);
+      const endTime = newSchedule.end_time.replace('T', ' ').substring(0, 16);
+
+      const res = await fetch("/api/schedule", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          student_id: normalizedUser.student_id,
+          title: newSchedule.title,
+          start_time: startTime,
+          end_time: endTime,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        alert(data.message || "일정 추가 실패");
+        return;
+      }
+
+      // 성공 시 일정 다시 불러오기
+      await fetchStudentCalendarData(normalizedUser.student_id);
+      setShowScheduleModal(false);
+      setNewSchedule({ title: '', start_time: '', end_time: '' });
+    } catch (err) {
+      console.error("일정 추가 오류:", err);
+      alert("일정 추가 중 오류가 발생했습니다.");
+    }
   };
 
-  const handleUpdateSchedule = () => {
-    setSchedules(schedules.map(s => s.schedule_id === editingSchedule.schedule_id ? { ...s, ...newSchedule } : s));
-    setShowScheduleModal(false);
-    setEditingSchedule(null);
-    setNewSchedule({ title: '', start_time: '', end_time: '' });
+  const handleUpdateSchedule = async () => {
+    if (!newSchedule.title || !newSchedule.start_time || !newSchedule.end_time) {
+      alert('모든 필드를 입력해주세요.');
+      return;
+    }
+
+    try {
+      // 날짜 형식 변환
+      const startTime = newSchedule.start_time.replace('T', ' ').substring(0, 16);
+      const endTime = newSchedule.end_time.replace('T', ' ').substring(0, 16);
+
+      const res = await fetch("/api/schedule", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          schedule_id: editingSchedule.schedule_id,
+          title: newSchedule.title,
+          start_time: startTime,
+          end_time: endTime,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        alert(data.message || "일정 수정 실패");
+        return;
+      }
+
+      // 성공 시 일정 다시 불러오기
+      await fetchStudentCalendarData(normalizedUser.student_id);
+      setShowScheduleModal(false);
+      setEditingSchedule(null);
+      setNewSchedule({ title: '', start_time: '', end_time: '' });
+    } catch (err) {
+      console.error("일정 수정 오류:", err);
+      alert("일정 수정 중 오류가 발생했습니다.");
+    }
   };
 
-  const handleDeleteSchedule = (scheduleId) => {
+  const handleDeleteSchedule = async (scheduleId) => {
     if (!window.confirm('정말 삭제하시겠습니까?')) return;
-    setSchedules(schedules.filter(s => s.schedule_id !== scheduleId));
+
+    try {
+      const res = await fetch(`/api/schedule?id=${scheduleId}`, {
+        method: "DELETE",
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        alert(data.message || "일정 삭제 실패");
+        return;
+      }
+
+      // 성공 시 일정 다시 불러오기
+      await fetchStudentCalendarData(normalizedUser.student_id);
+    } catch (err) {
+      console.error("일정 삭제 오류:", err);
+      alert("일정 삭제 중 오류가 발생했습니다.");
+    }
+  };
+
+  const handleDeleteCourse = async (courseId, sectionId) => {
+    if (!window.confirm('정말 수강 취소하시겠습니까?')) return;
+
+    try {
+      const res = await fetch(
+        `/api/course-delete?student_id=${normalizedUser.student_id}&course_id=${courseId}&section_id=${sectionId}`,
+        {
+          method: "DELETE",
+        }
+      );
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        alert(data.message || "수업 삭제 실패");
+        return;
+      }
+
+      // 성공 시 수업 다시 불러오기
+      await fetchStudentCalendarData(normalizedUser.student_id);
+    } catch (err) {
+      console.error("수업 삭제 오류:", err);
+      alert("수업 삭제 중 오류가 발생했습니다.");
+    }
+  };
+
+  const handleDeleteGroup = async (groupId, action = "leave") => {
+    const actionText = action === "delete" ? "그룹을 삭제" : "그룹에서 탈퇴";
+    if (!window.confirm(`정말 ${actionText}하시겠습니까?`)) return;
+
+    try {
+      const res = await fetch(
+        `/api/group-delete?group_id=${groupId}&student_id=${normalizedUser.student_id}&action=${action}`,
+        {
+          method: "DELETE",
+        }
+      );
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        alert(data.message || "그룹 삭제 실패");
+        return;
+      }
+
+      // 성공 시 그룹 다시 불러오기
+      await fetchGroups();
+      // 친구 목록도 다시 불러오기
+      await fetchStudentCalendarData(normalizedUser.student_id);
+    } catch (err) {
+      console.error("그룹 삭제 오류:", err);
+      alert("그룹 삭제 중 오류가 발생했습니다.");
+    }
   };
 
   const openEditModal = (schedule) => {
     setEditingSchedule(schedule);
-    setNewSchedule({ title: schedule.title, start_time: schedule.start_time, end_time: schedule.end_time });
+    // datetime-local 형식으로 변환
+    const startTime = schedule.start_time ? schedule.start_time.replace(' ', 'T').substring(0, 16) : '';
+    const endTime = schedule.end_time ? schedule.end_time.replace(' ', 'T').substring(0, 16) : '';
+    setNewSchedule({ title: schedule.title, start_time: startTime, end_time: endTime });
     setShowScheduleModal(true);
+  };
+
+  const handleSearchSections = async (searchTerm = null) => {
+    const term = searchTerm || sectionSearchTerm;
+    if (!term.trim()) {
+      setSectionSearchResults([]);
+      return;
+    }
+
+    setIsSearching(true);
+    try {
+      const res = await fetch("/api/sections-search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ searchTerm: term }),
+      });
+
+      const data = await res.json();
+
+      if (res.ok) {
+        setSectionSearchResults(data.sections || []);
+      } else {
+        console.error("검색 실패:", data);
+        // 서버 에러인 경우에만 alert 표시
+        if (res.status >= 500) {
+          alert(`서버 오류: ${data.message || data.error || "알 수 없는 오류"}\n\n상세: ${data.details || ""}`);
+        }
+        setSectionSearchResults([]);
+      }
+    } catch (err) {
+      console.error("수업 검색 오류:", err);
+      alert("검색 중 네트워크 오류가 발생했습니다. 백엔드 서버가 실행 중인지 확인해주세요.");
+      setSectionSearchResults([]);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  // 자동 검색을 위한 debounce
+  useEffect(() => {
+    if (!showCourseModal) return;
+
+    const timer = setTimeout(() => {
+      if (sectionSearchTerm.trim().length >= 2) {
+        handleSearchSections();
+      } else {
+        setSectionSearchResults([]);
+      }
+    }, 500); // 500ms debounce
+
+    return () => clearTimeout(timer);
+  }, [sectionSearchTerm, showCourseModal]);
+
+  const handleSelectSection = async (section) => {
+    // 선택한 분반을 바로 TAKES에 추가
+    try {
+      const res = await fetch("/api/course-add", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          student_id: normalizedUser.student_id,
+          course_id: section.COURSE_ID || section.course_id,
+          title: section.COURSE_TITLE || section.course_title,
+          credits: section.CREDITS || section.credits,
+          section_id: section.SECTION_ID || section.section_id,
+          academic_term: section.ACADEMIC_TERM || section.academic_term,
+          time: section.TIME || section.time || null,
+          location: section.LOCATION || section.location || null,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        alert(data.message || "수업 추가 실패");
+        return;
+      }
+
+      // 성공 시 수업 다시 불러오기
+      await fetchStudentCalendarData(normalizedUser.student_id);
+      setShowCourseModal(false);
+      setSectionSearchTerm('');
+      setSectionSearchResults([]);
+    } catch (err) {
+      console.error("수업 추가 오류:", err);
+      alert("수업 추가 중 오류가 발생했습니다.");
+    }
   };
 
   const getWeekDays = () => {
@@ -629,16 +860,31 @@ const parseTimeFromSection = (timeStr) => {
         </div>
 
         <div className="mb-4 mt-2">
-          <h2 className="text-xs font-semibold mb-2 text-gray-400 uppercase flex items-center gap-1">
-            <Calendar size={14} />매주 듣는 수업
-          </h2>
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="text-xs font-semibold text-gray-400 uppercase flex items-center gap-1">
+              <Calendar size={14} />매주 듣는 수업
+            </h2>
+            <button 
+              onClick={() => setShowCourseModal(true)} 
+              className="text-blue-400 hover:text-blue-300"
+            >
+              <Plus size={14} />
+            </button>
+          </div>
           {courses.length === 0 ? (
             <div className="text-xs text-gray-400">수강 중인 과목 정보 없음</div>
           ) : (
             <ul className="text-xs text-gray-200 space-y-1">
               {courses.map((c, idx) => (
-                <li key={idx}>
-                  {c.course_id} - 분반 {c.section_id}
+                <li key={idx} className="flex items-center justify-between group">
+                  <span>{c.course_id} - 분반 {c.section_id}</span>
+                  <button
+                    onClick={() => handleDeleteCourse(c.course_id, c.section_id)}
+                    className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-300 transition-opacity"
+                    title="수강 취소"
+                  >
+                    <Trash2 size={12} />
+                  </button>
                 </li>
               ))}
             </ul>
@@ -676,28 +922,51 @@ const parseTimeFromSection = (timeStr) => {
               {groups.map((g) => (
                 <div
                   key={g.groupId}
-                  className="border border-gray-700 rounded p-2"
+                  className="border border-gray-700 rounded p-2 group"
                 >
-                  <div className="font-semibold">
-                    {g.name}
-                    {g.leaderId === normalizedUser?.student_id && (
-                      <span className="ml-1 text-[10px] text-yellow-300">
-                        (리더)
-                      </span>
-                    )}
-                  </div>
-                  <div className="text-[11px] text-gray-400 mb-1">
-                    분류: {g.category}
-                  </div>
-                  <div className="text-[11px] text-gray-300">
-                    멤버:{" "}
-                    {g.members
-                      .map((m) =>
-                        m.student_id === normalizedUser?.student_id
-                          ? `${m.name}(나)`
-                          : m.name
-                      )
-                      .join(", ")}
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="font-semibold">
+                        {g.name}
+                        {g.leaderId === normalizedUser?.student_id && (
+                          <span className="ml-1 text-[10px] text-yellow-300">
+                            (리더)
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[11px] text-gray-400 mb-1">
+                        분류: {g.category}
+                      </div>
+                      <div className="text-[11px] text-gray-300">
+                        멤버:{" "}
+                        {g.members
+                          .map((m) =>
+                            m.student_id === normalizedUser?.student_id
+                              ? `${m.name}(나)`
+                              : m.name
+                          )
+                          .join(", ")}
+                      </div>
+                    </div>
+                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity ml-2">
+                      {g.leaderId === normalizedUser?.student_id ? (
+                        <button
+                          onClick={() => handleDeleteGroup(g.groupId, "delete")}
+                          className="text-red-400 hover:text-red-300"
+                          title="그룹 삭제"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => handleDeleteGroup(g.groupId, "leave")}
+                          className="text-gray-400 hover:text-red-400"
+                          title="그룹 탈퇴"
+                        >
+                          <X size={12} />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               ))}
@@ -885,13 +1154,100 @@ const parseTimeFromSection = (timeStr) => {
           <div className="bg-gray-800 rounded-lg p-6 w-96">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-xl font-semibold">{editingSchedule ? '일정 수정' : '새 일정 추가'}</h2>
-              <button onClick={() => { setShowScheduleModal(false); setEditingSchedule(null); }}><X size={20} /></button>
+              <button onClick={() => { setShowScheduleModal(false); setEditingSchedule(null); setNewSchedule({ title: '', start_time: '', end_time: '' }); }}><X size={20} /></button>
             </div>
             <div className="space-y-3">
               <div><label className="block text-sm mb-1">제목</label><input type="text" placeholder="일정 제목" value={newSchedule.title} onChange={(e) => setNewSchedule({...newSchedule, title: e.target.value})} className="w-full bg-gray-700 rounded px-3 py-2 outline-none" /></div>
               <div><label className="block text-sm mb-1">시작 시간</label><input type="datetime-local" value={newSchedule.start_time} onChange={(e) => setNewSchedule({...newSchedule, start_time: e.target.value})} className="w-full bg-gray-700 rounded px-3 py-2 outline-none" /></div>
               <div><label className="block text-sm mb-1">종료 시간</label><input type="datetime-local" value={newSchedule.end_time} onChange={(e) => setNewSchedule({...newSchedule, end_time: e.target.value})} className="w-full bg-gray-700 rounded px-3 py-2 outline-none" /></div>
               <button onClick={editingSchedule ? handleUpdateSchedule : handleAddSchedule} className="w-full bg-blue-500 hover:bg-blue-600 rounded px-4 py-2 font-semibold">{editingSchedule ? '수정' : '추가'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showCourseModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-gray-800 rounded-lg p-6 w-96 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-semibold">수업 추가</h2>
+              <button onClick={() => { 
+                setShowCourseModal(false); 
+                setSectionSearchTerm('');
+                setSectionSearchResults([]);
+              }}>
+                <X size={20} />
+              </button>
+            </div>
+            <div className="space-y-3">
+              {/* 수업명 검색 */}
+              <div>
+                <label className="block text-sm mb-1 font-semibold">수업명 검색</label>
+                <input 
+                  type="text" 
+                  placeholder="수업명을 입력하세요 (예: 데이터베이스)" 
+                  value={sectionSearchTerm} 
+                  onChange={(e) => setSectionSearchTerm(e.target.value)}
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter') {
+                      handleSearchSections();
+                    }
+                  }}
+                  className="w-full bg-gray-700 rounded px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500" 
+                  autoFocus
+                />
+                {isSearching && (
+                  <div className="text-xs text-gray-400 mt-1">검색 중...</div>
+                )}
+              </div>
+
+              {/* 검색 결과 */}
+              {sectionSearchResults.length > 0 && (
+                <div className="mt-2">
+                  <div className="text-xs text-gray-400 mb-2">
+                    검색 결과: {sectionSearchResults.length}개 (클릭하여 추가)
+                  </div>
+                  <div className="max-h-96 overflow-y-auto border border-gray-600 rounded">
+                    {sectionSearchResults.map((section, idx) => (
+                      <div
+                        key={idx}
+                        onClick={() => handleSelectSection(section)}
+                        className="p-3 hover:bg-gray-700 cursor-pointer border-b border-gray-600 last:border-b-0 transition-colors"
+                      >
+                        <div className="font-semibold text-sm mb-1">
+                          {section.COURSE_TITLE || section.course_title}
+                        </div>
+                        <div className="text-xs text-gray-300 space-y-1">
+                          <div>
+                            <span className="text-gray-400">강좌번호:</span> {section.COURSE_ID || section.course_id}
+                          </div>
+                          <div>
+                            <span className="text-gray-400">분반:</span> {section.SECTION_ID || section.section_id} | 
+                            <span className="text-gray-400"> 학기:</span> {section.ACADEMIC_TERM || section.academic_term} | 
+                            <span className="text-gray-400"> 학점:</span> {section.CREDITS || section.credits}
+                          </div>
+                          {(section.TIME || section.time) && (
+                            <div>
+                              <span className="text-gray-400">시간:</span> {section.TIME || section.time}
+                            </div>
+                          )}
+                          {(section.LOCATION || section.location) && (
+                            <div>
+                              <span className="text-gray-400">장소:</span> {section.LOCATION || section.location}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {sectionSearchTerm && sectionSearchResults.length === 0 && !isSearching && (
+                <div className="text-center text-gray-400 text-sm py-4">
+                  검색 결과가 없습니다.
+                </div>
+              )}
             </div>
           </div>
         </div>
