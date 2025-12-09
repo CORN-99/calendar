@@ -66,6 +66,23 @@ export default async function handler(
       return res.status(200).json(result.rows);
     }
 
+    // 8. [Type 8] 학생 단일 검색 (친구 추가용)
+    if (type === "search") {
+      const { studentId } = req.query;
+      if (!studentId) {
+        return res.status(400).json({ error: "학번이 필요합니다" });
+      }
+
+      const sql = `SELECT student_id as "student_id", name as "name", dept_id as "dept_id" FROM student WHERE student_id = :1`;
+      const result = await executeQuery(sql, [studentId]);
+
+      if (result.rows && result.rows.length > 0) {
+        return res.status(200).json({ student: result.rows[0] });
+      } else {
+        return res.status(404).json({ error: "학생을 찾을 수 없습니다" });
+      }
+    }
+
     return res.status(400).json({ error: "Invalid type" });
   } catch (error) {
     console.error(error);

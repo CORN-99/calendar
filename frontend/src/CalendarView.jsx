@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { ChevronLeft, ChevronRight, Plus, Search, X, Edit2, Users, Calendar, Eye, EyeOff, Trash2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Search, X, Edit2, Users, Calendar, Eye, EyeOff, Trash2, UserPlus } from 'lucide-react';
 
 const CalendarUI = ({ currentUser }) => {
   const normalizedUser = currentUser
@@ -44,25 +44,49 @@ const CalendarUI = ({ currentUser }) => {
   const [isSearching, setIsSearching] = useState(false);
   const [loadedStudents, setLoadedStudents] = useState([]);
 
+  // 친구 추가 모달 상태
+  const [showAddFriendModal, setShowAddFriendModal] = useState(false);
+  const [searchFriendId, setSearchFriendId] = useState('');
+  const [foundFriend, setFoundFriend] = useState(null);
+
   const userColors = {
-    primary: '#60a5fa',
-    friend1: '#f87171',
-    friend2: '#34d399',
-    friend3: '#fbbf24',
-    friend4: '#a78bfa',
-    friend5: '#fb923c',
+    primary: '#60a5fa', // Blue 400 (내 색상)
+    others: [ // 채도 낮은 친구 시간표 색상 팔레트
+      '#d73b5c',  // Vivid Coral Red
+      '#4785e0',  // Royal Bright Blue
+      '#e9a838',  // Saffron Yellow
+      '#26a457',  // Forest Emerald
+      '#9846d0',  // Deep Electric Purple
+      '#df7331',  // Burnt Orange
+      '#d83984',  // Ruby Magenta
+      '#74c53d',  // Bright Grass Green
+      '#30b5c1',  // Teal Blue
+      '#c244b0',  // Rich Pink Violet
+      '#b5843a',  // Antique Gold
+      '#406a9d',  // Deep Steel Blue
+      '#c95b3b',  // Terra Cotta
+      '#3f926a',  // Dark Mint Green
+      '#7440b8',  // Grape Purple
+    ],
   };
 
   const courseColorMap = useMemo(() => {
     const palette = [
-      '#4f8cff',
-      '#f97373',
-      '#facc15',
-      '#22c55e',
-      '#a855f7',
-      '#0ea5e9',
-      '#f97316',
-      '#2dd4bf',
+      '#a690af',  // Soft Dusty Lavender (H=300)
+      '#95a794',  // Muted Willow Green (H=140)
+      '#a88e84',  // Light Brick Clay (H=35)
+      '#8f9fa8',  // Cool Slate Gray (H=230)
+      '#a29f8f',  // Stone Khaki (H=70)
+      '#af969e',  // Pale Berry Rose (H=340)
+      '#8d9492',  // Cloudy Grayish Cyan (H=190)
+      '#a58e92',  // Subdued Mauve (H=10)
+      '#8a90a2',  // Periwinkle Gray (H=260)
+      '#99948c',  // Fawn Brown (H=55)
+      '#989f9e',  // Light Smoke Blue (H=210)
+      '#9b8c9d',  // Gentle Amethyst (H=280)
+      '#9ea494',  // Pale Moss Green (H=110)
+      '#a19586',  // Warm Sandstone (H=45)
+      '#94959a',  // Mineral Blue (H=250)
     ];
     const map = {};
     let idx = 0;
@@ -165,7 +189,7 @@ const CalendarUI = ({ currentUser }) => {
     fetchStudentCalendarData(userId);
   }, [userId]);
 
-  // 그룹/친구 불러오기
+  // 그룹 불러오기 (친구 로직 제거됨)
   useEffect(() => {
     if (!userId) return;
 
@@ -180,10 +204,7 @@ const CalendarUI = ({ currentUser }) => {
         if (!res.ok) throw new Error("그룹 조회 실패");
 
         const data = await res.json();
-
-        // rows: [{ GROUP_ID, GROUP_NAME, CATEGORY, LEADER_ID, STUDENT_ID, NAME, (optional) DEPT_ID }, ...]
         const grouped = {};
-        const friendMap = new Map();
 
         (data.rows || []).forEach((row) => {
           const gid = row.GROUP_ID;
@@ -201,73 +222,9 @@ const CalendarUI = ({ currentUser }) => {
             name: row.NAME,
             dept_id: row.DEPT_ID || "",
           });
-
-          if (row.STUDENT_ID !== normalizedUser.student_id) {
-            if (!friendMap.has(row.STUDENT_ID)) {
-              friendMap.set(row.STUDENT_ID, {
-                student_id: row.STUDENT_ID,
-                name: row.NAME,
-                dept_id: row.DEPT_ID || "",
-              });
-            }
-          }
         });
-
-        const friendList = Array.from(friendMap.values());
-        const friendIds = new Set(friendList.map(f => f.student_id));
 
         setGroups(Object.values(grouped));
-
-        // students 목록 업데이트: 친구가 더 이상 그룹에 없으면 제거, 새 친구는 추가
-        setStudents((prev) => {
-          const filtered = prev.filter(s => 
-            s.student_id === normalizedUser.student_id || friendIds.has(s.student_id)
-          );
-          const existingIds = new Set(filtered.map(s => s.student_id));
-          const newFriends = friendList.filter(f => !existingIds.has(f.student_id));
-          return [...filtered, ...newFriends];
-        });
-
-        // friendships 배열 채우기 (me -> friend)
-        const newFriendships = friendList.map((f) => ({
-          me: normalizedUser.student_id,
-          friend: f.student_id,
-        }));
-        setFriendships(newFriendships);
-
-        // 더 이상 친구가 아닌 학생들의 데이터 정리
-        const currentFriendIds = new Set(newFriendships.map(f => f.friend));
-        setSchedules((prev) => 
-          prev.filter(s => 
-            s.student_id === normalizedUser.student_id || currentFriendIds.has(s.student_id)
-          )
-        );
-        setSections((prev) => 
-          prev.filter(sec => 
-            sec.student_id === normalizedUser.student_id || currentFriendIds.has(sec.student_id)
-          )
-        );
-        setCourses((prev) => 
-          prev.filter(c => 
-            c.student_id === normalizedUser.student_id || currentFriendIds.has(c.student_id)
-          )
-        );
-
-        // visibleStudents에서도 제거 (단, 본인은 항상 유지)
-        setVisibleStudents((prev) => {
-          const filtered = prev.filter(id => 
-            id === normalizedUser.student_id || currentFriendIds.has(id)
-          );
-          // 본인만 남으면 본인만 반환, 아니면 필터링된 결과 반환
-          return filtered.length > 0 ? filtered : [normalizedUser.student_id];
-        });
-
-        // loadedStudents에서도 제거
-        setLoadedStudents((prev) => 
-          prev.filter(id => 
-            id === normalizedUser.student_id || currentFriendIds.has(id)
-          )
-        );
       } catch (e) {
         console.error(e);
       }
@@ -275,6 +232,116 @@ const CalendarUI = ({ currentUser }) => {
 
     fetchGroups();
   }, [userId]);
+
+  // 친구 목록 불러오기 (신규 API 사용)
+  const fetchFriends = async () => {
+    if (!userId) return;
+    try {
+      const res = await fetch(`/api/friends?studentId=${userId}`);
+      if (!res.ok) throw new Error("친구 조회 실패");
+      
+      const data = await res.json();
+      const friendList = data.friends || []; // [{ student_id, name, dept_id }, ...]
+
+      // students 목록 업데이트: 기존 목록 유지하면서 새 친구 추가
+      setStudents((prev) => {
+        const existingIds = new Set(prev.map(s => s.student_id));
+        const newFriends = friendList.filter(f => !existingIds.has(f.student_id));
+        
+        // 기존 친구 목록에서 삭제된 사람 제거 필요할 수 있음 (선택 사항)
+        // 여기서는 일단 누적합집합 개념으로 접근하되, friendships 상태로 필터링함
+        return [...prev, ...newFriends];
+      });
+
+      // friendships 상태 업데이트
+      const newFriendships = friendList.map(f => ({
+        me: userId,
+        friend: f.student_id
+      }));
+      setFriendships(newFriendships);
+
+      // 친구가 끊긴 경우 데이터 정리
+      const currentFriendIds = new Set(friendList.map(f => f.student_id));
+      
+      // 화면 표시 정리
+      setVisibleStudents(prev => {
+        // 본인이거나 현재 친구인 경우만 유지
+        return prev.filter(id => id === userId || currentFriendIds.has(id));
+      });
+
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  useEffect(() => {
+    fetchFriends();
+  }, [userId]);
+
+  // 친구 검색
+  const handleSearchFriend = async () => {
+    if (!searchFriendId.trim()) return;
+    try {
+      const res = await fetch(`/api/students?type=search&studentId=${searchFriendId}`);
+      if (!res.ok) {
+        if (res.status === 404) alert("학생을 찾을 수 없습니다.");
+        else alert("검색 실패");
+        setFoundFriend(null);
+        return;
+      }
+      const data = await res.json();
+      setFoundFriend(data.student);
+    } catch (e) {
+      console.error(e);
+      alert("검색 중 오류 발생");
+    }
+  };
+
+  // 친구 추가
+  const handleAddFriend = async () => {
+    if (!foundFriend) return;
+    try {
+      const res = await fetch("/api/friends", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ myId: userId, friendId: foundFriend.student_id }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        alert(data.error || "친구 추가 실패");
+        return;
+      }
+
+      alert("친구가 추가되었습니다.");
+      setShowAddFriendModal(false);
+      setSearchFriendId('');
+      setFoundFriend(null);
+      fetchFriends(); // 목록 새로고침
+    } catch (e) {
+      console.error(e);
+      alert("오류 발생");
+    }
+  };
+
+  // 친구 삭제
+  const handleDeleteFriend = async (friendId) => {
+    if (!window.confirm("정말 삭제하시겠습니까?")) return;
+    try {
+      const res = await fetch(`/api/friends?myId=${userId}&friendId=${friendId}`, {
+        method: "DELETE",
+      });
+
+      if (!res.ok) {
+        alert("삭제 실패");
+        return;
+      }
+
+      fetchFriends(); // 목록 새로고침
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
   const getFriends = () => {
     if (!normalizedUser) return [];
@@ -324,7 +391,15 @@ const CalendarUI = ({ currentUser }) => {
 
   const getUserColor = (studentId) => {
     if (studentId === normalizedUser?.student_id) return userColors.primary;
-    return '#6b7280';
+    
+    // studentId를 해시하여 고정된 색상 인덱스 생성
+    let hash = 0;
+    for (let i = 0; i < studentId.length; i++) {
+      hash = studentId.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    
+    const index = Math.abs(hash) % userColors.others.length;
+    return userColors.others[index];
   };
 
   const handleAddSchedule = async () => {
@@ -892,10 +967,28 @@ const parseTimeFromSection = (timeStr) => {
         </div>
 
         <div className="mb-4">
-          <h2 className="text-xs font-semibold mb-2 text-gray-400 uppercase flex items-center gap-1"><Users size={14} />친구</h2>
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="text-xs font-semibold text-gray-400 uppercase flex items-center gap-1">
+              <Users size={14} />친구
+            </h2>
+            <button 
+              onClick={() => {
+                setSearchFriendId('');
+                setFoundFriend(null);
+                setShowAddFriendModal(true);
+              }} 
+              className="text-blue-400 hover:text-blue-300"
+            >
+              <UserPlus size={14} />
+            </button>
+          </div>
           <div className="space-y-2">
             {friends.map(friend => (
-              <div key={friend.student_id} className={`bg-gray-800 rounded-lg p-3 cursor-pointer border-2 transition-all ${visibleStudents.includes(friend.student_id) ? 'border-blue-500' : 'border-transparent hover:border-gray-600'}`} onClick={() => toggleUserVisibility(friend.student_id)}>
+              <div 
+                key={friend.student_id} 
+                className={`bg-gray-800 rounded-lg p-3 cursor-pointer border-2 transition-all group relative ${visibleStudents.includes(friend.student_id) ? 'border-blue-500' : 'border-transparent hover:border-gray-600'}`} 
+                onClick={() => toggleUserVisibility(friend.student_id)}
+              >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <div className="w-3 h-3 rounded-full" style={{ backgroundColor: getUserColor(friend.student_id) }}></div>
@@ -904,7 +997,19 @@ const parseTimeFromSection = (timeStr) => {
                       <div className="text-xs text-gray-400">{friend.dept_id}</div>
                     </div>
                   </div>
-                  {visibleStudents.includes(friend.student_id) ? <Eye size={16} className="text-blue-400" /> : <EyeOff size={16} className="text-gray-500" />}
+                  <div className="flex items-center gap-2">
+                    {visibleStudents.includes(friend.student_id) ? <Eye size={16} className="text-blue-400" /> : <EyeOff size={16} className="text-gray-500" />}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteFriend(friend.student_id);
+                      }}
+                      className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-400 transition-opacity"
+                      title="친구 삭제"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}
@@ -1161,6 +1266,51 @@ const parseTimeFromSection = (timeStr) => {
               <div><label className="block text-sm mb-1">시작 시간</label><input type="datetime-local" value={newSchedule.start_time} onChange={(e) => setNewSchedule({...newSchedule, start_time: e.target.value})} className="w-full bg-gray-700 rounded px-3 py-2 outline-none" /></div>
               <div><label className="block text-sm mb-1">종료 시간</label><input type="datetime-local" value={newSchedule.end_time} onChange={(e) => setNewSchedule({...newSchedule, end_time: e.target.value})} className="w-full bg-gray-700 rounded px-3 py-2 outline-none" /></div>
               <button onClick={editingSchedule ? handleUpdateSchedule : handleAddSchedule} className="w-full bg-blue-500 hover:bg-blue-600 rounded px-4 py-2 font-semibold">{editingSchedule ? '수정' : '추가'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showAddFriendModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-gray-800 rounded-lg p-6 w-96">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-semibold">친구 추가</h2>
+              <button onClick={() => setShowAddFriendModal(false)}><X size={20} /></button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm mb-1">학번 검색</label>
+                <div className="flex gap-2">
+                  <input 
+                    type="text" 
+                    placeholder="친구의 학번을 입력하세요" 
+                    value={searchFriendId} 
+                    onChange={(e) => setSearchFriendId(e.target.value)}
+                    onKeyPress={(e) => e.key === 'Enter' && handleSearchFriend()}
+                    className="flex-1 bg-gray-700 rounded px-3 py-2 outline-none" 
+                  />
+                  <button onClick={handleSearchFriend} className="bg-blue-600 hover:bg-blue-500 rounded px-3 py-2">
+                    <Search size={18} />
+                  </button>
+                </div>
+              </div>
+
+              {foundFriend && (
+                <div className="bg-gray-700 rounded p-3 border border-gray-600">
+                  <div className="text-sm text-gray-300 mb-1">검색 결과</div>
+                  <div className="font-semibold text-lg">{foundFriend.name}</div>
+                  <div className="text-sm text-gray-400">{foundFriend.dept_id} / {foundFriend.student_id}</div>
+                  
+                  <button 
+                    onClick={handleAddFriend} 
+                    className="w-full mt-3 bg-blue-500 hover:bg-blue-600 rounded px-4 py-2 font-semibold flex items-center justify-center gap-2"
+                  >
+                    <UserPlus size={18} />
+                    친구 추가하기
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
