@@ -1,44 +1,31 @@
-// backend/src/pages/api/courses.ts
+// backend/src/pages/api/courses.ts (예시)
 import type { NextApiRequest, NextApiResponse } from "next";
 import { executeQuery } from "../../db";
 
-export default async function handler(
-  req: NextApiRequest,
-  res: NextApiResponse
-) {
-  // POST만 허용
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") {
-    res.setHeader("Allow", ["POST"]);
     return res.status(405).json({ message: "Method Not Allowed" });
   }
 
-  try {
-    const { studentId } = req.body;
-
-    if (!studentId) {
-      return res.status(400).json({ message: "studentId 필요함" });
-    }
-
-    const sql = `
-      SELECT
-        t.STUDENT_ID,
-        t.COURSE_ID,
-        t.SECTION_ID
-      FROM TAKES t
-      WHERE t.STUDENT_ID = :1
-      ORDER BY t.COURSE_ID, t.SECTION_ID
-    `;
-
-    const result = await executeQuery(sql, [studentId]);
-
-    return res.status(200).json({
-      message: "ok",
-      courses: result.rows,
-    });
-  } catch (err) {
-    console.error("courses api error:", err);
-    return res
-      .status(500)
-      .json({ message: "서버 에러", error: String(err) });
+  const { studentId } = req.body;
+  if (!studentId) {
+    return res.status(400).json({ message: "studentId 필요함" });
   }
+
+  const sql = `
+    SELECT
+      t.student_id,
+      t.course_id,
+      t.section_id,
+      c.title,
+      s.time
+    FROM takes   t
+    JOIN section s ON s.course_id = t.course_id AND s.section_id = t.section_id
+    JOIN course  c ON c.course_id = t.course_id
+    WHERE t.student_id = :1
+      AND s.academic_term = 202502
+  `;
+  const result = await executeQuery(sql, [studentId]);
+
+  return res.status(200).json({ courses: result.rows });
 }
