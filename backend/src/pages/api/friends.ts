@@ -18,15 +18,18 @@ export default async function handler(
       // 내가 student_id1인 경우 (상대방은 student_id2)
       // 또는 내가 student_id2인 경우 (상대방은 student_id1)
       // 두 경우를 UNION 하여 상대방 정보를 가져옵니다.
+      // 학과명도 함께 가져오기 위해 DEPARTMENT 테이블과 JOIN
       const sql = `
-        SELECT s.STUDENT_ID as "student_id", s.NAME as "name", s.DEPT_ID as "dept_id"
+        SELECT s.STUDENT_ID as "student_id", s.NAME as "name", s.DEPT_ID as "dept_id", d.DEPT_NAME as "dept_name"
         FROM STUDENT s
         JOIN FRIENDSHIP f ON s.STUDENT_ID = f.STUDENT_ID2
+        JOIN DEPARTMENT d ON s.DEPT_ID = d.DEPT_ID
         WHERE f.STUDENT_ID1 = :1
         UNION
-        SELECT s.STUDENT_ID as "student_id", s.NAME as "name", s.DEPT_ID as "dept_id"
+        SELECT s.STUDENT_ID as "student_id", s.NAME as "name", s.DEPT_ID as "dept_id", d.DEPT_NAME as "dept_name"
         FROM STUDENT s
         JOIN FRIENDSHIP f ON s.STUDENT_ID = f.STUDENT_ID1
+        JOIN DEPARTMENT d ON s.DEPT_ID = d.DEPT_ID
         WHERE f.STUDENT_ID2 = :1
       `;
 
