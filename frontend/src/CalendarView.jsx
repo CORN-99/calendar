@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { ChevronLeft, ChevronRight, Plus, Search, X, Edit2, Users, Calendar, Eye, EyeOff, Trash2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Search, X, Edit2, Users, Calendar, Eye, EyeOff, Trash2, UserPlus } from 'lucide-react';
 
 const CalendarUI = ({ currentUser }) => {
   const normalizedUser = currentUser
@@ -44,25 +44,49 @@ const CalendarUI = ({ currentUser }) => {
   const [isSearching, setIsSearching] = useState(false);
   const [loadedStudents, setLoadedStudents] = useState([]);
 
+  // 친구 추가 모달 상태
+  const [showAddFriendModal, setShowAddFriendModal] = useState(false);
+  const [searchFriendId, setSearchFriendId] = useState('');
+  const [foundFriend, setFoundFriend] = useState(null);
+
   const userColors = {
-    primary: '#60a5fa',
-    friend1: '#f87171',
-    friend2: '#34d399',
-    friend3: '#fbbf24',
-    friend4: '#a78bfa',
-    friend5: '#fb923c',
+    primary: '#60a5fa', // Blue 400 (내 색상)
+    others: [ // 채도 낮은 친구 시간표 색상 팔레트
+      '#d73b5c',  // Vivid Coral Red
+      '#4785e0',  // Royal Bright Blue
+      '#e9a838',  // Saffron Yellow
+      '#26a457',  // Forest Emerald
+      '#9846d0',  // Deep Electric Purple
+      '#df7331',  // Burnt Orange
+      '#d83984',  // Ruby Magenta
+      '#74c53d',  // Bright Grass Green
+      '#30b5c1',  // Teal Blue
+      '#c244b0',  // Rich Pink Violet
+      '#b5843a',  // Antique Gold
+      '#406a9d',  // Deep Steel Blue
+      '#c95b3b',  // Terra Cotta
+      '#3f926a',  // Dark Mint Green
+      '#7440b8',  // Grape Purple
+    ],
   };
 
   const courseColorMap = useMemo(() => {
     const palette = [
-      '#4f8cff',
-      '#f97373',
-      '#facc15',
-      '#22c55e',
-      '#a855f7',
-      '#0ea5e9',
-      '#f97316',
-      '#2dd4bf',
+      '#a690af',  // Soft Dusty Lavender (H=300)
+      '#95a794',  // Muted Willow Green (H=140)
+      '#a88e84',  // Light Brick Clay (H=35)
+      '#8f9fa8',  // Cool Slate Gray (H=230)
+      '#a29f8f',  // Stone Khaki (H=70)
+      '#af969e',  // Pale Berry Rose (H=340)
+      '#8d9492',  // Cloudy Grayish Cyan (H=190)
+      '#a58e92',  // Subdued Mauve (H=10)
+      '#8a90a2',  // Periwinkle Gray (H=260)
+      '#99948c',  // Fawn Brown (H=55)
+      '#989f9e',  // Light Smoke Blue (H=210)
+      '#9b8c9d',  // Gentle Amethyst (H=280)
+      '#9ea494',  // Pale Moss Green (H=110)
+      '#a19586',  // Warm Sandstone (H=45)
+      '#94959a',  // Mineral Blue (H=250)
     ];
     const map = {};
     let idx = 0;
@@ -165,7 +189,7 @@ const CalendarUI = ({ currentUser }) => {
     fetchStudentCalendarData(userId);
   }, [userId]);
 
-  // 그룹/친구 불러오기
+  // 그룹 불러오기 (친구 로직 제거됨)
   useEffect(() => {
     if (!userId) return;
 
@@ -180,10 +204,7 @@ const CalendarUI = ({ currentUser }) => {
         if (!res.ok) throw new Error("그룹 조회 실패");
 
         const data = await res.json();
-
-        // rows: [{ GROUP_ID, GROUP_NAME, CATEGORY, LEADER_ID, STUDENT_ID, NAME, (optional) DEPT_ID }, ...]
         const grouped = {};
-        const friendMap = new Map();
 
         (data.rows || []).forEach((row) => {
           const gid = row.GROUP_ID;
@@ -201,73 +222,9 @@ const CalendarUI = ({ currentUser }) => {
             name: row.NAME,
             dept_id: row.DEPT_ID || "",
           });
-
-          if (row.STUDENT_ID !== normalizedUser.student_id) {
-            if (!friendMap.has(row.STUDENT_ID)) {
-              friendMap.set(row.STUDENT_ID, {
-                student_id: row.STUDENT_ID,
-                name: row.NAME,
-                dept_id: row.DEPT_ID || "",
-              });
-            }
-          }
         });
-
-        const friendList = Array.from(friendMap.values());
-        const friendIds = new Set(friendList.map(f => f.student_id));
 
         setGroups(Object.values(grouped));
-
-        // students 목록 업데이트: 친구가 더 이상 그룹에 없으면 제거, 새 친구는 추가
-        setStudents((prev) => {
-          const filtered = prev.filter(s => 
-            s.student_id === normalizedUser.student_id || friendIds.has(s.student_id)
-          );
-          const existingIds = new Set(filtered.map(s => s.student_id));
-          const newFriends = friendList.filter(f => !existingIds.has(f.student_id));
-          return [...filtered, ...newFriends];
-        });
-
-        // friendships 배열 채우기 (me -> friend)
-        const newFriendships = friendList.map((f) => ({
-          me: normalizedUser.student_id,
-          friend: f.student_id,
-        }));
-        setFriendships(newFriendships);
-
-        // 더 이상 친구가 아닌 학생들의 데이터 정리
-        const currentFriendIds = new Set(newFriendships.map(f => f.friend));
-        setSchedules((prev) => 
-          prev.filter(s => 
-            s.student_id === normalizedUser.student_id || currentFriendIds.has(s.student_id)
-          )
-        );
-        setSections((prev) => 
-          prev.filter(sec => 
-            sec.student_id === normalizedUser.student_id || currentFriendIds.has(sec.student_id)
-          )
-        );
-        setCourses((prev) => 
-          prev.filter(c => 
-            c.student_id === normalizedUser.student_id || currentFriendIds.has(c.student_id)
-          )
-        );
-
-        // visibleStudents에서도 제거 (단, 본인은 항상 유지)
-        setVisibleStudents((prev) => {
-          const filtered = prev.filter(id => 
-            id === normalizedUser.student_id || currentFriendIds.has(id)
-          );
-          // 본인만 남으면 본인만 반환, 아니면 필터링된 결과 반환
-          return filtered.length > 0 ? filtered : [normalizedUser.student_id];
-        });
-
-        // loadedStudents에서도 제거
-        setLoadedStudents((prev) => 
-          prev.filter(id => 
-            id === normalizedUser.student_id || currentFriendIds.has(id)
-          )
-        );
       } catch (e) {
         console.error(e);
       }
@@ -275,6 +232,116 @@ const CalendarUI = ({ currentUser }) => {
 
     fetchGroups();
   }, [userId]);
+
+  // 친구 목록 불러오기 (신규 API 사용)
+  const fetchFriends = async () => {
+    if (!userId) return;
+    try {
+      const res = await fetch(`/api/friends?studentId=${userId}`);
+      if (!res.ok) throw new Error("친구 조회 실패");
+      
+      const data = await res.json();
+      const friendList = data.friends || []; // [{ student_id, name, dept_id }, ...]
+
+      // students 목록 업데이트: 기존 목록 유지하면서 새 친구 추가
+      setStudents((prev) => {
+        const existingIds = new Set(prev.map(s => s.student_id));
+        const newFriends = friendList.filter(f => !existingIds.has(f.student_id));
+        
+        // 기존 친구 목록에서 삭제된 사람 제거 필요할 수 있음 (선택 사항)
+        // 여기서는 일단 누적합집합 개념으로 접근하되, friendships 상태로 필터링함
+        return [...prev, ...newFriends];
+      });
+
+      // friendships 상태 업데이트
+      const newFriendships = friendList.map(f => ({
+        me: userId,
+        friend: f.student_id
+      }));
+      setFriendships(newFriendships);
+
+      // 친구가 끊긴 경우 데이터 정리
+      const currentFriendIds = new Set(friendList.map(f => f.student_id));
+      
+      // 화면 표시 정리
+      setVisibleStudents(prev => {
+        // 본인이거나 현재 친구인 경우만 유지
+        return prev.filter(id => id === userId || currentFriendIds.has(id));
+      });
+
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  useEffect(() => {
+    fetchFriends();
+  }, [userId]);
+
+  // 친구 검색
+  const handleSearchFriend = async () => {
+    if (!searchFriendId.trim()) return;
+    try {
+      const res = await fetch(`/api/students?type=search&studentId=${searchFriendId}`);
+      if (!res.ok) {
+        if (res.status === 404) alert("학생을 찾을 수 없습니다.");
+        else alert("검색 실패");
+        setFoundFriend(null);
+        return;
+      }
+      const data = await res.json();
+      setFoundFriend(data.student);
+    } catch (e) {
+      console.error(e);
+      alert("검색 중 오류 발생");
+    }
+  };
+
+  // 친구 추가
+  const handleAddFriend = async () => {
+    if (!foundFriend) return;
+    try {
+      const res = await fetch("/api/friends", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ myId: userId, friendId: foundFriend.student_id }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        alert(data.error || "친구 추가 실패");
+        return;
+      }
+
+      alert("친구가 추가되었습니다.");
+      setShowAddFriendModal(false);
+      setSearchFriendId('');
+      setFoundFriend(null);
+      fetchFriends(); // 목록 새로고침
+    } catch (e) {
+      console.error(e);
+      alert("오류 발생");
+    }
+  };
+
+  // 친구 삭제
+  const handleDeleteFriend = async (friendId) => {
+    if (!window.confirm("정말 삭제하시겠습니까?")) return;
+    try {
+      const res = await fetch(`/api/friends?myId=${userId}&friendId=${friendId}`, {
+        method: "DELETE",
+      });
+
+      if (!res.ok) {
+        alert("삭제 실패");
+        return;
+      }
+
+      fetchFriends(); // 목록 새로고침
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
   const getFriends = () => {
     if (!normalizedUser) return [];
@@ -324,7 +391,15 @@ const CalendarUI = ({ currentUser }) => {
 
   const getUserColor = (studentId) => {
     if (studentId === normalizedUser?.student_id) return userColors.primary;
-    return '#6b7280';
+    
+    // studentId를 해시하여 고정된 색상 인덱스 생성
+    let hash = 0;
+    for (let i = 0; i < studentId.length; i++) {
+      hash = studentId.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    
+    const index = Math.abs(hash) % userColors.others.length;
+    return userColors.others[index];
   };
 
   const handleAddSchedule = async () => {
@@ -708,121 +783,102 @@ const parseTimeFromSection = (timeStr) => {
   const friends = getFriends();
   const getStudentName = (studentId) => students.find(s => s.student_id === studentId)?.name || '';
 
-  const isCourseContinuation = (items, idx) => {
-    const item = items[idx];
-    if (!item || item.type !== 'course') return false;
+  // --- 레이아웃 알고리즘 시작 ---
 
-    const curKey = (item.data && item.data.course_id) || item.title;
-    const curDateStr = item.date.toDateString();
+  // 두 아이템이 겹치는지 확인 (시간 기준)
+  const checkOverlap = (a, b) => {
+    return a.startTime < b.endTime && a.endTime > b.startTime;
+  };
 
-    for (let j = idx - 1; j >= 0; j -= 1) {
-      const prev = items[j];
-      if (!prev || prev.type !== 'course') continue;
-      if (prev.date.toDateString() !== curDateStr) continue;
+  // 특정 요일의 아이템들에 대해 위치(left, width)를 계산하는 함수
+  const calculateDailyLayout = (dayItems) => {
+    if (!dayItems || dayItems.length === 0) return [];
 
-      const prevKey = (prev.data && prev.data.course_id) || prev.title;
-      if (prevKey !== curKey) continue;
-
-      if (prev.endTime.getTime() === item.startTime.getTime()) {
-        return true;
+    // 1. 시작 시간 순으로 정렬 (같으면 긴 일정 우선, 그다음 ID순)
+    const sortedItems = [...dayItems].sort((a, b) => {
+      if (a.startTime.getTime() !== b.startTime.getTime()) {
+        return a.startTime - b.startTime;
       }
+      if (a.endTime.getTime() !== b.endTime.getTime()) {
+        return b.endTime - a.endTime; // 긴 것 우선
+      }
+      return a.id.localeCompare(b.id);
+    });
 
-      // 이전 시간이 현재 시작보다 앞이면 더 이상 볼 필요 없음
-      if (prev.startTime.getTime() < item.startTime.getTime()) {
-        break;
+    // 2. 클러스터링 (서로 겹치는 일정끼리 그룹화)
+    const clusters = [];
+    for (const item of sortedItems) {
+      let added = false;
+      for (const cluster of clusters) {
+        // 클러스터 내의 어떤 아이템이라도 현재 아이템과 겹치면 같은 클러스터
+        if (cluster.some(other => checkOverlap(item, other))) {
+          cluster.push(item);
+          added = true;
+          break;
+        }
+      }
+      if (!added) {
+        clusters.push([item]);
       }
     }
 
-    return false;
-  };
+    // 3. 각 클러스터별로 컬럼 할당 및 위치 계산
+    const layoutResults = [];
 
-  // 두 이벤트가 시간적으로 겹치는지 확인하는 함수
-  const isTimeOverlapping = (item1, item2) => {
-    const start1 = item1.startTime.getTime();
-    const end1 = item1.endTime.getTime();
-    const start2 = item2.startTime.getTime();
-    const end2 = item2.endTime.getTime();
-    
-    // 시간이 겹치는지 확인: 시작 시간이 다른 이벤트의 종료 시간보다 작고,
-    // 종료 시간이 다른 이벤트의 시작 시간보다 커야 함
-    // 단, 경계에서 만나는 경우(end1 === start2 또는 start1 === end2)는 겹치지 않는 것으로 간주
-    return start1 < end2 && end1 > start2;
-  };
-  
-  // 같은 날짜의 모든 이벤트를 겹치는 그룹으로 묶는 함수 (Union-Find 방식)
-  const getOverlappingGroupsForDay = (dayItems) => {
-    if (dayItems.length === 0) return [];
-    
-    const groups = [];
-    const itemToGroup = new Map();
-    
-    dayItems.forEach(item => {
-      // 현재 아이템과 겹치는 그룹 찾기
-      const overlappingGroupIndices = [];
-      
-      groups.forEach((group, groupIdx) => {
-        const hasOverlap = group.some(other => isTimeOverlapping(item, other));
-        if (hasOverlap) {
-          overlappingGroupIndices.push(groupIdx);
+    clusters.forEach(cluster => {
+      // 클러스터 내에서 다시 정렬 (이미 되어있지만 확실히)
+      cluster.sort((a, b) => a.startTime - b.startTime);
+
+      // 컬럼 할당: 각 아이템에 대해 충돌하지 않는 가장 낮은 인덱스 부여
+      const columns = []; // [ [item, item], [item], ... ] 각 컬럼에 들어간 아이템들
+      const itemColumnIndex = new Map(); // itemId -> columnIndex
+
+      cluster.forEach(item => {
+        let placed = false;
+        // 기존 컬럼들 순회하며 빈 곳 찾기
+        for (let i = 0; i < columns.length; i++) {
+          const colItems = columns[i];
+          // 해당 컬럼의 마지막 아이템과 겹치지 않으면 배치 가능
+          // (정렬되어 있으므로 마지막 아이템만 체크하면 됨... 이 아니라,
+          //  중간에 빈 공간이 있을 수 있으니 해당 컬럼의 모든 아이템과 체크해야 안전)
+          const hasOverlap = colItems.some(existing => checkOverlap(item, existing));
+          
+          if (!hasOverlap) {
+            colItems.push(item);
+            itemColumnIndex.set(item.id, i);
+            placed = true;
+            break;
+          }
+        }
+
+        if (!placed) {
+          // 새 컬럼 생성
+          columns.push([item]);
+          itemColumnIndex.set(item.id, columns.length - 1);
         }
       });
+
+      const totalColumns = columns.length;
       
-      if (overlappingGroupIndices.length === 0) {
-        // 새로운 그룹 생성
-        const newGroup = [item];
-        groups.push(newGroup);
-        itemToGroup.set(item.id, groups.length - 1);
-      } else {
-        // 첫 번째 겹치는 그룹에 추가
-        const targetGroupIdx = overlappingGroupIndices[0];
-        groups[targetGroupIdx].push(item);
-        itemToGroup.set(item.id, targetGroupIdx);
-        
-        // 나머지 겹치는 그룹들을 첫 번째 그룹에 병합 (전이적 클로저)
-        for (let i = overlappingGroupIndices.length - 1; i > 0; i--) {
-          const mergeIdx = overlappingGroupIndices[i];
-          const mergeGroup = groups[mergeIdx];
-          
-          mergeGroup.forEach(otherItem => {
-            if (!groups[targetGroupIdx].some(existing => existing.id === otherItem.id)) {
-              groups[targetGroupIdx].push(otherItem);
-            }
-            itemToGroup.set(otherItem.id, targetGroupIdx);
-          });
-          
-          groups.splice(mergeIdx, 1);
-          
-          // 인덱스 재조정
-          itemToGroup.forEach((groupIdx, itemId) => {
-            if (groupIdx > mergeIdx) {
-              itemToGroup.set(itemId, groupIdx - 1);
-            }
-          });
-        }
-      }
+      cluster.forEach(item => {
+        const colIdx = itemColumnIndex.get(item.id);
+        const width = 100 / totalColumns;
+        const left = colIdx * width;
+
+        layoutResults.push({
+          item,
+          style: {
+            left: `${left}%`,
+            width: `${width}%`, // -1px for border gap?
+          }
+        });
+      });
     });
-    
-    return groups;
+
+    return layoutResults;
   };
-  
-  // 특정 아이템이 속한 겹치는 그룹 찾기
-  const getOverlappingGroupForItem = (items, currentItem) => {
-    const targetDateStr = currentItem.date.toDateString();
-    const dayItems = items.filter(item => item.date.toDateString() === targetDateStr);
-    
-    if (dayItems.length === 0) return [currentItem];
-    
-    const groups = getOverlappingGroupsForDay(dayItems);
-    
-    // 현재 아이템이 속한 그룹 찾기
-    for (const group of groups) {
-      if (group.some(item => item.id === currentItem.id)) {
-        return group;
-      }
-    }
-    
-    return [currentItem]; // 겹치는 그룹이 없으면 자기 자신만
-  };
+
+  // --- 레이아웃 알고리즘 끝 ---
 
   return (
     <div className="flex h-screen bg-gray-900 text-white">
@@ -892,10 +948,28 @@ const parseTimeFromSection = (timeStr) => {
         </div>
 
         <div className="mb-4">
-          <h2 className="text-xs font-semibold mb-2 text-gray-400 uppercase flex items-center gap-1"><Users size={14} />친구</h2>
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="text-xs font-semibold text-gray-400 uppercase flex items-center gap-1">
+              <Users size={14} />친구
+            </h2>
+            <button 
+              onClick={() => {
+                setSearchFriendId('');
+                setFoundFriend(null);
+                setShowAddFriendModal(true);
+              }} 
+              className="text-blue-400 hover:text-blue-300"
+            >
+              <UserPlus size={14} />
+            </button>
+          </div>
           <div className="space-y-2">
             {friends.map(friend => (
-              <div key={friend.student_id} className={`bg-gray-800 rounded-lg p-3 cursor-pointer border-2 transition-all ${visibleStudents.includes(friend.student_id) ? 'border-blue-500' : 'border-transparent hover:border-gray-600'}`} onClick={() => toggleUserVisibility(friend.student_id)}>
+              <div 
+                key={friend.student_id} 
+                className={`bg-gray-800 rounded-lg p-3 cursor-pointer border-2 transition-all group relative ${visibleStudents.includes(friend.student_id) ? 'border-blue-500' : 'border-transparent hover:border-gray-600'}`} 
+                onClick={() => toggleUserVisibility(friend.student_id)}
+              >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <div className="w-3 h-3 rounded-full" style={{ backgroundColor: getUserColor(friend.student_id) }}></div>
@@ -904,7 +978,19 @@ const parseTimeFromSection = (timeStr) => {
                       <div className="text-xs text-gray-400">{friend.dept_id}</div>
                     </div>
                   </div>
-                  {visibleStudents.includes(friend.student_id) ? <Eye size={16} className="text-blue-400" /> : <EyeOff size={16} className="text-gray-500" />}
+                  <div className="flex items-center gap-2">
+                    {visibleStudents.includes(friend.student_id) ? <Eye size={16} className="text-blue-400" /> : <EyeOff size={16} className="text-gray-500" />}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteFriend(friend.student_id);
+                      }}
+                      className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-400 transition-opacity"
+                      title="친구 삭제"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}
@@ -1043,107 +1129,66 @@ const parseTimeFromSection = (timeStr) => {
               </div>
             ))}
 
-            {visibleItems.map((item, idx) => {
-              const matchingDay = weekDays.findIndex(
-                (d) => d.fullDate.toDateString() === item.date.toDateString()
+            {visibleItems.length > 0 && weekDays.map((day) => {
+              const dayItems = visibleItems.filter(
+                (item) => item.date.toDateString() === day.fullDate.toDateString()
               );
-              if (matchingDay === -1) return null;
-
-              const startHour = item.startTime.getHours();
-              const startMin = item.startTime.getMinutes();
-              const endHour = item.endTime.getHours();
-              const endMin = item.endTime.getMinutes();
-              const topPosition = (startHour - 7) * 60 + startMin;
-              const duration =
-                (endHour - startHour) * 60 + (endMin - startMin);
-
-              const dayBaseLeft = (matchingDay / 7) * 87.5 + 12.5; // 요일별 시작 위치
-              const dayColumnWidth = 12; // 각 요일 칼럼의 전체 폭 (% 기준)
-
-              // 현재 이벤트의 시간대에서 실제로 겹치는 이벤트만 찾기
-              const targetDateStr = item.date.toDateString();
-              const itemStart = item.startTime.getTime();
-              const itemEnd = item.endTime.getTime();
               
-              // 같은 날짜의 이벤트 중에서 현재 이벤트와 시간이 겹치는 것만 찾기
-              const overlappingItems = visibleItems.filter(other => {
-                if (other.id === item.id) return false;
-                if (other.date.toDateString() !== targetDateStr) return false;
-                
-                const otherStart = other.startTime.getTime();
-                const otherEnd = other.endTime.getTime();
-                
-                // 현재 이벤트의 시간대와 겹치는지 확인
-                return otherStart < itemEnd && otherEnd > itemStart;
-              });
-              
-              // 겹치는 이벤트가 없으면 전체 너비 사용
-              let leftPercent, widthPercent;
-              
-              if (overlappingItems.length === 0) {
-                // 겹치지 않으면 전체 너비 사용
-                leftPercent = dayBaseLeft;
-                widthPercent = dayColumnWidth - 0.5;
-              } else {
-                // 겹치는 경우: 현재 이벤트를 포함한 그룹 내에서만 분할
-                const allOverlapping = [item, ...overlappingItems];
-                const overlappingCount = allOverlapping.length;
-                const slotWidth = dayColumnWidth / overlappingCount;
-                
-                // 현재 아이템이 겹치는 그룹 내에서 몇 번째인지 찾기
-                // 같은 시간대에 시작하는 순서대로 정렬, 그 다음 학생 순서
-                const sortedOverlapping = [...allOverlapping].sort((a, b) => {
-                  const timeDiff = a.startTime.getTime() - b.startTime.getTime();
-                  if (timeDiff !== 0) return timeDiff;
-                  // 같은 시간이면 visibleStudents 순서대로
-                  const aIdx = visibleStudents.indexOf(a.studentId);
-                  const bIdx = visibleStudents.indexOf(b.studentId);
-                  return aIdx - bIdx;
-                });
-                
-                // 현재 아이템의 위치 찾기 (id로 정확히 매칭)
-                const positionInGroup = sortedOverlapping.findIndex(overlap => 
-                  overlap.id === item.id
-                );
-                
-                if (positionInGroup === -1) {
-                  // 찾지 못한 경우 (이상하지만 안전장치)
-                  leftPercent = dayBaseLeft;
-                  widthPercent = dayColumnWidth - 0.5;
-                } else {
-                  leftPercent = dayBaseLeft + slotWidth * positionInGroup;
-                  widthPercent = slotWidth - 0.5; // 칼럼 사이 약간의 간격
-                }
-              }
+              const layoutItems = calculateDailyLayout(dayItems);
 
-              const continuation = isCourseContinuation(visibleItems, idx);
+              return layoutItems.map(({ item, style }) => {
+                const startHour = item.startTime.getHours();
+                const startMin = item.startTime.getMinutes();
+                const endHour = item.endTime.getHours();
+                const endMin = item.endTime.getMinutes();
+                
+                // 7시부터 시작하므로 (startHour - 7)
+                const topPosition = (startHour - 7) * 60 + startMin;
+                const duration = (endHour - startHour) * 60 + (endMin - startMin);
 
-              return (
-                <div
-                  key={item.id}
-                  className="absolute rounded px-2 py-1 text-xs cursor-pointer hover:opacity-90 transition-opacity"
-                  style={{
-                    backgroundColor: item.color,
-                    top: `${topPosition}px`,
-                    left: `${leftPercent}%`,
-                    width: `${widthPercent}%`,
-                    height: `${duration}px`,
-                    minHeight: '30px',
-                    color: '#000',
-                    overflow: 'hidden',
-                    wordBreak: 'break-word',
-                  }}
-                >
-                  {!continuation && (
-                    <div className="font-semibold" style={{ 
+                // 요일별 기본 위치 (12.5% 씩)
+                // day.day는 날짜 숫자이므로, weekDays 배열의 인덱스를 찾아야 함
+                const dayIndex = weekDays.findIndex(d => d.date === day.date);
+                const dayBaseLeft = dayIndex * 12.5 + 12.5; // 첫 컬럼(시간) 12.5% 제외
+                
+                // style.left는 0~100% (해당 요일 컬럼 내에서의 위치)
+                // 실제 left = dayBaseLeft + (style.left * 0.125)
+                const finalLeft = `calc(${dayBaseLeft}% + ${parseFloat(style.left) * 0.125}%)`;
+                const finalWidth = `${parseFloat(style.width) * 0.125}%`;
+
+                return (
+                  <div
+                    key={item.id}
+                    className="absolute rounded px-2 py-1 text-xs cursor-pointer hover:opacity-90 transition-opacity hover:z-50 group"
+                    style={{
+                      backgroundColor: item.color,
+                      top: `${topPosition}px`,
+                      left: finalLeft,
+                      width: finalWidth,
+                      height: `${duration}px`,
+                      minHeight: '30px',
+                      color: '#000',
                       overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                      width: '100%'
-                    }}>{item.title}</div>
-                  )}
-                </div>
-              );
+                      boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
+                      border: '1px solid rgba(255,255,255,0.2)'
+                    }}
+                    title={`${item.title}\n${item.startTime.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - ${item.endTime.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`}
+                  >
+                    <div className="font-semibold truncate">
+                      {item.title}
+                    </div>
+                    {/* Hover 시 전체 내용 보여주기 (옵션) */}
+                    <div className="hidden group-hover:block absolute left-0 top-full bg-gray-900 text-white text-xs p-2 rounded shadow-lg z-50 w-48 whitespace-normal">
+                      <div className="font-bold mb-1">{item.title}</div>
+                      <div>
+                        {item.startTime.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - 
+                        {item.endTime.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                      </div>
+                      {item.data && item.data.location && <div>{item.data.location}</div>}
+                    </div>
+                  </div>
+                );
+              });
             })}
           </div>
         </div>
@@ -1161,6 +1206,51 @@ const parseTimeFromSection = (timeStr) => {
               <div><label className="block text-sm mb-1">시작 시간</label><input type="datetime-local" value={newSchedule.start_time} onChange={(e) => setNewSchedule({...newSchedule, start_time: e.target.value})} className="w-full bg-gray-700 rounded px-3 py-2 outline-none" /></div>
               <div><label className="block text-sm mb-1">종료 시간</label><input type="datetime-local" value={newSchedule.end_time} onChange={(e) => setNewSchedule({...newSchedule, end_time: e.target.value})} className="w-full bg-gray-700 rounded px-3 py-2 outline-none" /></div>
               <button onClick={editingSchedule ? handleUpdateSchedule : handleAddSchedule} className="w-full bg-blue-500 hover:bg-blue-600 rounded px-4 py-2 font-semibold">{editingSchedule ? '수정' : '추가'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showAddFriendModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-gray-800 rounded-lg p-6 w-96">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-semibold">친구 추가</h2>
+              <button onClick={() => setShowAddFriendModal(false)}><X size={20} /></button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm mb-1">학번 검색</label>
+                <div className="flex gap-2">
+                  <input 
+                    type="text" 
+                    placeholder="친구의 학번을 입력하세요" 
+                    value={searchFriendId} 
+                    onChange={(e) => setSearchFriendId(e.target.value)}
+                    onKeyPress={(e) => e.key === 'Enter' && handleSearchFriend()}
+                    className="flex-1 bg-gray-700 rounded px-3 py-2 outline-none" 
+                  />
+                  <button onClick={handleSearchFriend} className="bg-blue-600 hover:bg-blue-500 rounded px-3 py-2">
+                    <Search size={18} />
+                  </button>
+                </div>
+              </div>
+
+              {foundFriend && (
+                <div className="bg-gray-700 rounded p-3 border border-gray-600">
+                  <div className="text-sm text-gray-300 mb-1">검색 결과</div>
+                  <div className="font-semibold text-lg">{foundFriend.name}</div>
+                  <div className="text-sm text-gray-400">{foundFriend.dept_id} / {foundFriend.student_id}</div>
+                  
+                  <button 
+                    onClick={handleAddFriend} 
+                    className="w-full mt-3 bg-blue-500 hover:bg-blue-600 rounded px-4 py-2 font-semibold flex items-center justify-center gap-2"
+                  >
+                    <UserPlus size={18} />
+                    친구 추가하기
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
