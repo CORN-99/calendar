@@ -43,11 +43,9 @@ cd calendar
 
 3. 생성된 `.env` 파일에 Oracle DB 접속 정보를 입력합니다.
    ```env
-   DB_HOST=your-oracle-host
-   DB_PORT=1521
-   DB_USER=your-username
-   DB_PASSWORD=your-password
-   DB_SERVICE_NAME=your-service-name
+  DB_USER=CALENDAR_USER
+   DB_PASSWORD=YOUR_PASSWORD_HERE
+   DB_CONNECT_STRING=localhost:1521/XEPDB1
    ```
 
 #### 📦 의존성 설치
