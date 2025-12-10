@@ -8,7 +8,7 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // sessionStorage에서 사용자 정보 복원 (탭별로 독립적)
+  // sessionStorage에서 사용자 정보 복원
   useEffect(() => {
     const savedUser = sessionStorage.getItem(STORAGE_KEY);
     if (savedUser) {

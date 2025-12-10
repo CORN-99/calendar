@@ -56,6 +56,12 @@ const CalendarUI = ({ currentUser, onLogout }) => {
     purpose: ''
   });
 
+  // 그룹 검색 및 참여 모달 상태
+  const [showSearchGroupModal, setShowSearchGroupModal] = useState(false);
+  const [searchGroupName, setSearchGroupName] = useState('');
+  const [foundGroups, setFoundGroups] = useState([]);
+  const [isSearchingGroups, setIsSearchingGroups] = useState(false);
+
   const userColors = {
     primary: '#60a5fa', // Blue 400 (내 색상)
     others: [ // 채도 낮은 친구 시간표 색상 팔레트
@@ -537,6 +543,7 @@ const CalendarUI = ({ currentUser, onLogout }) => {
     }
   };
 
+  // 그룹 추가
   const handleAddGroup = async () => {
     if (!newGroup.group_name) {
       alert("그룹명을 입력해주세요.");
@@ -572,7 +579,79 @@ const CalendarUI = ({ currentUser, onLogout }) => {
     }
   };
 
+  // 그룹 검색
+  const handleSearchGroup = async () => {
+    if (!searchGroupName.trim()) {
+      alert("그룹명을 입력해주세요.");
+      return;
+    }
+
+    setIsSearchingGroups(true);
+    try {
+      const res = await fetch("/api/group-search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ group_name: searchGroupName }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        alert(data.message || "그룹 검색 실패");
+        setFoundGroups([]);
+        return;
+      }
+
+      setFoundGroups(data.groups || []);
+    } catch (err) {
+      console.error("그룹 검색 오류:", err);
+      alert("그룹 검색 중 오류가 발생했습니다.");
+      setFoundGroups([]);
+    } finally {
+      setIsSearchingGroups(false);
+    }
+  };
+
+  // 그룹 참여
+  const handleJoinGroup = async (groupId) => {
+    if (!window.confirm("이 그룹에 참여하시겠습니까?")) return;
+
+    try {
+      const res = await fetch("/api/group-join", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          student_id: normalizedUser.student_id,
+          group_id: groupId,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        alert(data.message || "그룹 참여 실패");
+        return;
+      }
+
+      alert("그룹에 참여했습니다.");
+      setShowSearchGroupModal(false);
+      setSearchGroupName('');
+      setFoundGroups([]);
+      await fetchGroups();
+    } catch (err) {
+      console.error("그룹 참여 오류:", err);
+      alert("그룹 참여 중 오류가 발생했습니다.");
+    }
+  };
+
   const handleDeleteGroup = async (groupId, action = "leave") => {
+    // 리더 권한 확인 (프론트엔드에서도 체크)
+    const group = groups.find(g => g.groupId === groupId);
+    if (action === "delete" && group && group.leaderId !== normalizedUser?.student_id) {
+      alert("그룹 삭제는 리더만 가능합니다.");
+      return;
+    }
+
     const actionText = action === "delete" ? "그룹을 삭제" : "그룹에서 탈퇴";
     if (!window.confirm(`정말 ${actionText}하시겠습니까?`)) return;
 
@@ -1064,16 +1143,29 @@ const parseTimeFromSection = (timeStr) => {
             <h2 className="text-xs font-semibold text-gray-400 uppercase flex items-center gap-1">
               내 그룹 / 친구
             </h2>
-            <button 
-              onClick={() => {
-                setNewGroup({ group_name: '', purpose: '' });
-                setShowAddGroupModal(true);
-              }} 
-              className="text-blue-400 hover:text-blue-300"
-              title="그룹 생성"
-            >
-              <Plus size={14} />
-            </button>
+            <div className="flex gap-2">
+              <button 
+                onClick={() => {
+                  setSearchGroupName('');
+                  setFoundGroups([]);
+                  setShowSearchGroupModal(true);
+                }} 
+                className="text-green-400 hover:text-green-300"
+                title="그룹 검색 및 참여"
+              >
+                <Search size={14} />
+              </button>
+              <button 
+                onClick={() => {
+                  setNewGroup({ group_name: '', purpose: '' });
+                  setShowAddGroupModal(true);
+                }} 
+                className="text-blue-400 hover:text-blue-300"
+                title="그룹 생성"
+              >
+                <Plus size={14} />
+              </button>
+            </div>
           </div>
           {groups.length === 0 ? (
             <div className="text-xs text-gray-400">가입된 그룹 없음</div>
@@ -1366,6 +1458,80 @@ const parseTimeFromSection = (timeStr) => {
                 <Users size={18} />
                 그룹 생성하기
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showSearchGroupModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-gray-800 rounded-lg p-6 w-96 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-semibold">그룹 검색 및 참여</h2>
+              <button onClick={() => {
+                setShowSearchGroupModal(false);
+                setSearchGroupName('');
+                setFoundGroups([]);
+              }}><X size={20} /></button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm mb-1">그룹명 검색</label>
+                <div className="flex gap-2">
+                  <input 
+                    type="text" 
+                    placeholder="그룹명을 입력하세요" 
+                    value={searchGroupName} 
+                    onChange={(e) => setSearchGroupName(e.target.value)}
+                    onKeyPress={(e) => e.key === 'Enter' && handleSearchGroup()}
+                    className="flex-1 bg-gray-700 rounded px-3 py-2 outline-none" 
+                  />
+                  <button 
+                    onClick={handleSearchGroup}
+                    disabled={isSearchingGroups}
+                    className="bg-green-600 hover:bg-green-500 disabled:bg-gray-600 disabled:cursor-not-allowed rounded px-3 py-2"
+                  >
+                    <Search size={18} />
+                  </button>
+                </div>
+              </div>
+
+              {foundGroups.length > 0 && (
+                <div className="space-y-2">
+                  <div className="text-sm text-gray-300 mb-2">검색 결과 ({foundGroups.length}개)</div>
+                  {foundGroups.map((group) => {
+                    const isAlreadyMember = groups.some(g => g.groupId === group.GROUP_ID);
+                    return (
+                      <div key={group.GROUP_ID} className="bg-gray-700 rounded p-3 border border-gray-600">
+                        <div className="font-semibold text-lg mb-1">{group.GROUP_NAME}</div>
+                        <div className="text-sm text-gray-400 mb-1">
+                          리더: {group.LEADER_NAME} | 멤버 수: {group.MEMBER_COUNT}명
+                        </div>
+                        {group.PURPOSE && (
+                          <div className="text-sm text-gray-400 mb-2">목적: {group.PURPOSE}</div>
+                        )}
+                        {isAlreadyMember ? (
+                          <div className="text-sm text-blue-400">이미 참여 중인 그룹입니다.</div>
+                        ) : (
+                          <button 
+                            onClick={() => handleJoinGroup(group.GROUP_ID)}
+                            className="w-full mt-2 bg-green-500 hover:bg-green-600 rounded px-4 py-2 text-sm font-semibold flex items-center justify-center gap-2"
+                          >
+                            <Users size={16} />
+                            참여하기
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {foundGroups.length === 0 && searchGroupName && !isSearchingGroups && (
+                <div className="text-sm text-gray-400 text-center py-4">
+                  검색 결과가 없습니다.
+                </div>
+              )}
             </div>
           </div>
         </div>
