@@ -11,11 +11,9 @@ Oracle DB 기반의 로그인 기능 및 개인/공유 일정 열람 기능을 �
 ### 1️⃣ 프로젝트 클론
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/CORN-99/calendar.git
 cd calendar
 ```
-
-> **참고**: `<repository-url>`을 실제 Git 저장소 URL로 변경하세요.
 
 ---
 
